@@ -97,6 +97,9 @@ func _process(delta: float) -> void:
 	_carriage.position = point + facing * stand_off
 	for h in heights:
 		clean(Vector3(point.x, h, point.z), RADIUS, BASE_POWER, delta)
+		# Zusatz-Schichten (z.B. Buchrücken) sitzen etwas höher und weiter hinten
+		for layer in layers:
+			clean(Vector3(point.x, h + 0.17, point.z) - facing * 0.18, RADIUS, BASE_POWER, delta, layer)
 	# Bürsten drehen sich
 	for child in model.get_children():
 		if child.name.begins_with("Brush"):

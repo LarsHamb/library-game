@@ -17,6 +17,8 @@ extends Node3D
 ## Zonen: die erste Zone (config.zone_name) gibt es immer; weitere legt _build_world() mit add_zone() an,
 ## Türen dazu mit add_door(). Freigeschaltet werden sie über Upgrades mit unlocks_zone.
 ## Zusatz-Schmutz mit eigenem Werkzeug (z.B. Spinnweben): add_mess_layer(). Karte (M): config.zone_bounds setzen.
+## Schichten mit Gruppen (add_linked_flake(..., group)) geben config.group_bonus, wenn eine Gruppe sauber ist.
+## Herumliegendes zum Zurückstellen: add_pickup().
 
 var config: CleanGameConfig
 var state: CleanGameState
@@ -50,6 +52,10 @@ var _regrow_timer := 10.0
 var _wrong_tool_cooldown := 0.0
 var _offline_coins := 0
 var _offline_minutes := 0
+var _group_bonus_sum := 0
+var _group_count := 0
+var _group_timer := 0.0
+var _aimed_pickup: CleanPickup
 
 
 # ================================================================ Für das konkrete Spiel
@@ -171,10 +177,15 @@ func _ready() -> void:
 	player.wrong_tool.connect(_on_wrong_tool)
 
 	var loaded := _load_game()
+	for z in zones:
+		for p in z.pickups:
+			if state.returned.has(p.id):
+				p.place_at_target()
 	_place_collectibles()
 	for z in zones:
 		for m in z.all_messes():
 			m.flakes_removed.connect(_on_flakes_removed.bind(z))
+			m.group_cleaned.connect(_on_group_cleaned.bind(z))
 	apply_stats()
 	_rate_buckets.resize(RATE_WINDOW)
 	_rate_buckets.fill(0)
@@ -271,6 +282,17 @@ func _process(delta: float) -> void:
 		_autosave_timer = AUTOSAVE_SECONDS
 		save_game()
 	_wrong_tool_cooldown = maxf(0.0, _wrong_tool_cooldown - delta)
+	_update_pickup_aim()
+	# Gruppen-Boni sammeln, damit ein Roboter, der fünf Regalböden auf einmal schafft, nur eine Meldung auslöst
+	if _group_count > 0:
+		_group_timer -= delta
+		if _group_timer <= 0.0:
+			var text := "%s blitzblank! +%d %s" % [config.group_name, _group_bonus_sum, config.currency_name]
+			if _group_count > 1:
+				text = "%d× %s blitzblank! +%d %s" % [_group_count, config.group_name, _group_bonus_sum, config.currency_name]
+			hud.toast(text, 2.5)
+			_group_count = 0
+			_group_bonus_sum = 0
 	# Staub legt sich neu, sobald Roboter da sind, damit sie dauerhaft Arbeit haben
 	_regrow_timer -= delta
 	if _regrow_timer <= 0.0:
@@ -278,7 +300,9 @@ func _process(delta: float) -> void:
 		if bot_count() > 0:
 			for z in zones:
 				if z.unlocked:
-					z.mess.regrow(roundi(z.mess.total * config.regrow_per_minute / 6.0))
+					for m in z.all_messes():
+						if m.required_tool == "":   # Spinnweben o.ä. wachsen nicht nach
+							m.regrow(roundi(m.total * config.regrow_per_minute / 6.0))
 			_refresh_hud()
 
 
@@ -400,7 +424,7 @@ func _start_title_camera() -> void:
 
 
 func _update_menu_info() -> void:
-	var text := "%s: %.1f %% sauber" % [config.zone_name, mess.progress_percent()]
+	var text := "%s: %.1f %% sauber" % [config.zone_name, zones[0].progress_percent()]
 	if zones.size() > 1:
 		text = "Gesamt: %.1f %% sauber" % overall_percent()
 	if not config.collectibles.is_empty():
@@ -424,7 +448,7 @@ func _on_flakes_removed(count: int, earned: int, zone: CleanZone) -> void:
 	earned = roundi(earned * state.stat("coin_mult") * zone.value_mult)
 	state.coins += earned
 	_popup_coins += earned
-	var percent := zone.mess.progress_percent()
+	var percent := zone.progress_percent()
 	for m: int in config.milestones:
 		var key := "%s:%d" % [zone.id, m]
 		if percent >= m and not state.milestones_hit.has(key):
@@ -436,7 +460,9 @@ func _on_flakes_removed(count: int, earned: int, zone: CleanZone) -> void:
 	if not state.zones_done.has(zone.id) and percent >= config.complete_at:
 		state.zones_done.append(zone.id)
 		state.coins += zone.complete_bonus
-		zone.mess.clear_all()   # ruft diese Funktion erneut auf, zones_done verhindert eine Schleife
+		for m in zone.all_messes():
+			if m.required_tool == "":
+				m.clear_all()   # ruft diese Funktion erneut auf, zones_done verhindert eine Schleife
 		hud.toast("%s ist blitzsauber! Der letzte Rest fliegt davon.\nBonus: +%d %s" % [zone.display_name, zone.complete_bonus, config.currency_name], 6.0)
 		sfx.jingle()
 	_refresh_hud()
@@ -480,7 +506,11 @@ func _sync_bots() -> void:
 			var bot := _spawn_bot(u.spawns_bot, list.size())
 			if bot == null:
 				break
-			bot.mess = zone_at(bot.rail_from if bot is CleanRailBot else bot.position).mess
+			var bot_zone := zone_at(bot.rail_from if bot is CleanRailBot else bot.position)
+			bot.mess = bot_zone.mess
+			for layer in bot_zone.layers:
+				if layer.required_tool == "":
+					bot.layers.append(layer)
 			if bot is CleanDrone:
 				(bot as CleanDrone).messes = _open_messes()
 			var model := _make_bot_model(u.spawns_bot)
@@ -540,9 +570,15 @@ func _refresh_hud() -> void:
 	if bot_count() > 0:
 		tool_text += "\nRoboter im Einsatz: %d" % bot_count()
 	for layer in current_zone.layers:
-		if layer.remaining > 0:
+		if layer.remaining > 0 and layer.display_name != "":
 			tool_text += "\n%s: %d übrig" % [layer.display_name, layer.remaining]
-	hud.set_values(current_zone.display_name, current_zone.mess.progress_percent(), state.coins, tool_text, state.affordable_count(), state.found.size())
+	var loose := 0
+	for p in current_zone.pickups:
+		if not p.done:
+			loose += 1
+	if loose > 0:
+		tool_text += "\n%s: %d übrig" % [config.pickup_name, loose]
+	hud.set_values(current_zone.display_name, current_zone.progress_percent(), state.coins, tool_text, state.affordable_count(), state.found.size())
 
 
 # ================================================================ Sammelobjekte
@@ -657,6 +693,7 @@ func _setup_input() -> void:
 	_add_key_action("open_shop", [KEY_U, KEY_TAB])
 	_add_key_action("radar", [KEY_R])
 	_add_key_action("open_map", [KEY_M])
+	_add_key_action("interact", [KEY_E])
 	for n in range(1, 10):
 		_add_key_action("tool_%d" % n, [KEY_0 + n])
 	if not InputMap.has_action("clean"):
@@ -742,6 +779,61 @@ func add_mess_layer(zone: CleanZone, display_name: String, required_tool: String
 	return layer
 
 
+## Etwas Herumliegendes, das an seinen Platz zurück gehört. model liegt bei from, gehört nach to.
+## size = ungefähre Größe (für das Anklicken). Die id muss bei jedem Start gleich sein (Spielstand).
+func add_pickup(id: String, zone: CleanZone, model: Node3D, from: Transform3D, to: Transform3D, size: Vector3, coins := 50) -> CleanPickup:
+	var p := CleanPickup.create(id, model, from, to, size)
+	p.zone = zone
+	p.coins = coins
+	p.collected.connect(_on_pickup_returned)
+	add_child(p)
+	zone.pickups.append(p)
+	return p
+
+
+func _update_pickup_aim() -> void:
+	var target := player.aim_target()
+	var p := target as CleanPickup
+	if p and (p.done or not p.zone.unlocked):
+		p = null
+	if p != _aimed_pickup:
+		_aimed_pickup = p
+		hud.set_prompt(config.pickup_prompt if p else "")
+	if p and (player.is_cleaning_held() or Input.is_action_just_pressed("interact")):
+		p.collect()
+		_aimed_pickup = null
+		hud.set_prompt("")
+		sfx.upgrade()
+
+
+func _on_pickup_returned(p: CleanPickup) -> void:
+	if not state.returned.has(p.id):
+		state.returned.append(p.id)
+	var earned := roundi(p.coins * p.zone.value_mult * state.stat("coin_mult"))
+	state.coins += earned
+	hud.coin_popup(earned)
+	sfx.coin()
+	var left := 0
+	for q in p.zone.pickups:
+		if not q.done:
+			left += 1
+	if left == 0:
+		hud.toast("Alle %s in %s sind wieder an ihrem Platz!" % [config.pickup_name, p.zone.display_name], 4.0)
+		sfx.jingle()
+	_refresh_hud()
+
+
+func _on_group_cleaned(_group: int, zone: CleanZone) -> void:
+	var bonus := roundi(config.group_bonus * zone.value_mult * state.stat("coin_mult"))
+	state.coins += bonus
+	_group_bonus_sum += bonus
+	_group_count += 1
+	_group_timer = 0.6
+	if _group_count == 1:
+		sfx.jingle()
+	_refresh_hud()
+
+
 ## Bringt die Spielfigur in eine offene Zone (Klick auf der Karte).
 func travel_to(zone: CleanZone) -> void:
 	player.global_position = zone.spawn_point()
@@ -814,8 +906,9 @@ func overall_percent() -> float:
 	var total := 0
 	var cleaned := 0
 	for z in zones:
-		total += z.mess.total
-		cleaned += z.mess.total - z.mess.remaining
+		for m in z.all_messes():
+			total += m.total
+			cleaned += m.total - m.remaining
 	return 100.0 * cleaned / maxi(total, 1)
 
 

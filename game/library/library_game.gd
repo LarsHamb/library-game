@@ -18,6 +18,11 @@ const CASE_BOARDS := [0.1, 0.6, 1.1, 1.6, 2.1, 2.6]
 const DUSTY_BOARDS := 6   # alle Böden; die oberen erreicht man über die Leitern
 const UPPER_BOARD_DIRT := 0.3   # oben putzt nie jemand, da liegt mehr Staub
 const LADDER_TOP := 1.45        # höchste Fußhöhe auf der Leiter
+const FLOOR_SPACING := 0.28     # Abstand der Bodenflocken
+const BOOK_COIN_MULT := 2.0     # ein Buch bringt doppelt so viel wie eine Bodenflocke
+const BOOK_DUST_MAX_Y := 4.6    # Bücher darüber bleiben sauber (da kommt niemand hin)
+const BOOK_SEGMENT := 3.5       # lange Wandregale: alle 3,5 m ein eigener Bonus-Abschnitt
+const LOOSE_BOOKS := {"main": 24, "archive": 8, "dome": 8}
 # --- Türen zu den Nebensälen (in beiden Seitenwänden) ---
 const DOOR_Z := 9.0
 const DOOR_W := 3.0
@@ -38,6 +43,14 @@ const DUSTER_NAMES := [
 var _rng := RandomNumberGenerator.new()
 var _book_transforms: Array[Transform3D] = []
 var _book_colors := PackedColorArray()
+var _book_spots: Array[Vector3] = []     # Stelle am Buchrücken, an der man das Buch putzt
+var _book_dirt := PackedFloat32Array()   # 0 = sauber (zu hoch oben), sonst Staubmenge
+var _book_group := PackedInt32Array()    # Regalboden (bzw. Abschnitt), für den Bonus
+var _book_zone: Array[String] = []
+var _book_gaps: Array[Dictionary] = []   # Lücken im Regal: dorthin gehören die verstreuten Bücher
+var _zone_id := "main"                   # in welcher Zone gerade gebaut wird
+var _group_counter := 0
+var _zone_excludes := {}                 # Zone -> Flächen ohne Bodenstaub (dort liegt auch kein Buch herum)
 var _shelf_spots: Array[Vector3] = []   # mögliche Verstecke für seltene Bücher auf Regalböden
 var _no_floor_dust: Array[Rect2] = []
 var _extra_spots: Array[Vector3] = []   # Verstecke für Bücher in den Nebensälen
@@ -55,10 +68,12 @@ func _build_world() -> void:
 	_build_hall()
 	_build_shelves(_no_floor_dust)
 	_build_tables(_no_floor_dust)
-	mess.add_area(Vector3.ZERO, HALL_SIZE - Vector2(0.4, 0.4), 0.2, 1.0, _no_floor_dust)
+	# Der Boden ist Nebensache: lockerer verteilt als früher, die Bücher bringen das meiste
+	mess.add_area(Vector3.ZERO, HALL_SIZE - Vector2(0.4, 0.4), FLOOR_SPACING, 1.15, _no_floor_dust)
 	_build_archive()
 	_build_dome()
 	_build_books()
+	_scatter_books()
 	_add_air_motes(HALL_SIZE.x * 0.5)
 	_build_cobwebs()
 
@@ -81,24 +96,22 @@ func _on_stats_applied() -> void:
 	player.set_tool_scale("duster", 1.0 + state.level("radius") * 0.15)
 
 
-## Drei Bücher auf dem Boden, zwei auf hohen Regalböden. Immer dieselben Plätze.
+## Seltene Bücher stecken zwischen den Regalbüchern: drei auf unteren, zwei auf hohen Regalböden,
+## je eines im Kartenarchiv und im Kuppelsaal. Immer dieselben Plätze.
 func _collectible_spots() -> Array[Vector3]:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 4242
 	var spots: Array[Vector3] = []
-	var hx := HALL_SIZE.x * 0.5 - 1.0
-	var hz := HALL_SIZE.y * 0.5 - 1.0
-	while spots.size() < 3:
-		var p := Vector3(rng.randf_range(-hx, hx), 0.0, rng.randf_range(-hz, hz))
-		var free := true
-		for r in _no_floor_dust:
-			if r.grow(0.3).has_point(Vector2(p.x, p.z)):
-				free = false
-		if free and p.distance_to(config.player_start) > 4.0:
-			spots.append(p)
+	var low_spots := _shelf_spots.filter(func(v: Vector3) -> bool: return v.y < 1.5)
 	var high_spots := _shelf_spots.filter(func(v: Vector3) -> bool: return v.y > 1.5)
+	while spots.size() < 3:
+		var p: Vector3 = low_spots[rng.randi() % low_spots.size()]
+		if not spots.has(p):
+			spots.append(p)
 	while spots.size() < 5:
-		spots.append(high_spots[rng.randi() % high_spots.size()])
+		var p: Vector3 = high_spots[rng.randi() % high_spots.size()]
+		if not spots.has(p):
+			spots.append(p)
 	spots.append_array(_extra_spots)   # Buch 6 im Kartenarchiv, Buch 7 im Kuppelsaal
 	return spots
 
@@ -452,6 +465,7 @@ func _build_hall() -> void:
 ## Kartenarchiv links: niedrige Decke, Kartenschränke, Globen, rußiger Staub (1,5× Münzen).
 func _build_archive() -> void:
 	var zone := add_zone("archive", "Kartenarchiv", Rect2(-27.0, -2.0, 16.0, 16.0), 8000, 1.5, Color(0.5, 0.47, 0.44))
+	_zone_id = "archive"
 	zone.spawn = Vector3(-12.3, 0.05, DOOR_Z)
 	zone.spawn_yaw = PI * 0.5   # Blick in den Saal (nach -x)
 	var cx := -19.0
@@ -511,7 +525,16 @@ func _build_archive() -> void:
 		add_collider(Vector3(0.6, 1.6, 0.6), Vector3(g.x, 0.8, g.y))
 		excludes.append(Rect2(g.x - 0.4, g.y - 0.4, 0.8, 0.8))
 
-	zone.mess.add_area(Vector3(cx, 0, cz), size - Vector2(0.4, 0.4), 0.2, 1.0, excludes, 0.25)
+	# Bücherregale mit Atlanten an den beiden langen Wänden
+	var atlas_boards: Array = [0.1, 0.6, 1.1, 1.6, 2.1, 2.6]
+	for x: float in [-24.5, -21.0, -17.5, -14.0]:
+		_build_case(x, -2.0 + CASE_DEPTH * 0.5, 1.0, CASE_WIDTH - 0.1, 3.1, atlas_boards, 0)
+		excludes.append(Rect2(x - CASE_WIDTH * 0.5, -2.0, CASE_WIDTH, CASE_DEPTH + 0.1))
+	for x: float in [-24.5, -21.0, -17.5]:
+		_build_case(x, 14.0 - CASE_DEPTH * 0.5, -1.0, CASE_WIDTH - 0.1, 3.1, atlas_boards, 0)
+		excludes.append(Rect2(x - CASE_WIDTH * 0.5, 14.0 - CASE_DEPTH - 0.1, CASE_WIDTH, CASE_DEPTH + 0.1))
+	zone.mess.add_area(Vector3(cx, 0, cz), size - Vector2(0.4, 0.4), FLOOR_SPACING, 1.15, excludes, 0.25)
+	_zone_excludes["archive"] = excludes
 	for lx: float in [-4.0, 4.0]:
 		for lz: float in [-4.0, 4.0]:
 			_add_lamp(Vector3(cx + lx, height - 0.6, cz + lz), Color(0.95, 0.85, 0.7), 1.3, 9.0, lx < 0 and lz < 0)
@@ -520,6 +543,7 @@ func _build_archive() -> void:
 ## Kuppelsaal rechts: hohe Glaskuppel, Statuen, ein großer Lesetisch und Goldstaub (2,5× Münzen).
 func _build_dome() -> void:
 	var zone := add_zone("dome", "Kuppelsaal", Rect2(11.0, -2.0, 18.0, 16.0), 25000, 2.5, Color(0.86, 0.73, 0.42))
+	_zone_id = "dome"
 	zone.spawn = Vector3(12.3, 0.05, DOOR_Z)
 	zone.spawn_yaw = -PI * 0.5
 	zone.mess.thick_darken = 0.04
@@ -606,7 +630,8 @@ func _build_dome() -> void:
 	_build_case(cx, -2.0 + CASE_DEPTH * 0.5, 1.0, size.x - 0.1, height - 0.6, tall_boards, 0)
 	excludes.append(Rect2(cx - size.x * 0.5, -2.0, size.x, CASE_DEPTH + 0.05))
 
-	zone.mess.add_area(Vector3(cx, 0, cz), size - Vector2(0.4, 0.4), 0.2, 1.0, excludes)
+	zone.mess.add_area(Vector3(cx, 0, cz), size - Vector2(0.4, 0.4), FLOOR_SPACING, 1.15, excludes)
+	_zone_excludes["dome"] = excludes
 
 
 ## Boden, drei Außenwände und Decke eines Nebensaals. side = -1 links vom Lesesaal, +1 rechts.
@@ -709,12 +734,20 @@ func _build_ladder(x: float, front_z: float, dir: float, height: float) -> void:
 func _fill_books(cx: float, back: float, dir: float, inner: float, top: float, gap: float) -> void:
 	var x := cx - inner * 0.5 + 0.02
 	var end := cx + inner * 0.5 - 0.02
+	var start := x
+	var board_group := _group_counter
+	_group_counter += ceili(inner / BOOK_SEGMENT)
+	var dusty := top < BOOK_DUST_MAX_Y
+	var extra := UPPER_BOARD_DIRT * 2.0 if top > 1.5 else 0.0   # oben putzt nie jemand
 	while true:
 		var w := _rng.randf_range(0.035, 0.085)
 		if x + w > end:
 			break
-		if _rng.randf() < 0.04:   # hin und wieder eine Lücke
-			x += _rng.randf_range(0.05, 0.25)
+		if _rng.randf() < 0.04:   # hin und wieder eine Lücke – dort fehlt ein Buch
+			var gap_w := _rng.randf_range(0.07, 0.25)
+			if x + gap_w <= end and gap > 0.26:
+				_book_gaps.append({"x": x + gap_w * 0.5, "w": gap_w, "top": top, "gap": gap, "back": back, "dir": dir, "zone": _zone_id})
+			x += gap_w
 			continue
 		var h := minf(_rng.randf_range(0.24, 0.4), gap)
 		var depth := _rng.randf_range(0.2, 0.29)
@@ -722,6 +755,10 @@ func _fill_books(cx: float, back: float, dir: float, inner: float, top: float, g
 			Vector3(x + w * 0.5, top + h * 0.5, back + dir * depth * 0.5)))
 		var color: Color = BOOK_COLORS[_rng.randi() % BOOK_COLORS.size()]
 		_book_colors.append(color.darkened(_rng.randf_range(0.0, 0.35)))
+		_book_spots.append(Vector3(x + w * 0.5, top + h * 0.5, back + dir * depth))
+		_book_dirt.append(_rng.randf_range(1.2, 2.4) + extra if dusty else 0.0)
+		_book_group.append(board_group + floori((x - start) / BOOK_SEGMENT))
+		_book_zone.append(_zone_id)
 		x += w + 0.003
 
 
@@ -731,6 +768,7 @@ func _build_books() -> void:
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.use_colors = true
+	mm.use_custom_data = true   # Staub pro Buch (siehe book.gdshader)
 	mm.mesh = book_mesh
 	mm.instance_count = _book_transforms.size()
 	for i in _book_transforms.size():
@@ -739,6 +777,71 @@ func _build_books() -> void:
 	var books := MultiMeshInstance3D.new()
 	books.multimesh = mm
 	add_child(books)
+	# Je Zone eine Schicht "Bücher": jede Flocke ist ein Buch und färbt es über die Instanzdaten grau
+	var layers := {}
+	for z in zones:
+		var layer := add_mess_layer(z, "Staubige Bücher", "", Color(0.6, 0.57, 0.52), BOOK_COIN_MULT)
+		layer.linked = mm
+		layers[z.id] = layer
+	for i in _book_transforms.size():
+		if _book_dirt[i] > 0.0:
+			(layers[_book_zone[i]] as CleanMessField).add_linked_flake(_book_spots[i], _book_dirt[i], i, _book_group[i])
+
+
+## Verstreute Bücher: liegen auf dem Boden und gehören in eine Lücke im Regal.
+## Anklicken – und sie fliegen an ihren Platz zurück.
+func _scatter_books() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 2024
+	_zone_excludes["main"] = _no_floor_dust
+	for z in zones:
+		var gaps: Array = _book_gaps.filter(func(g: Dictionary) -> bool: return g["zone"] == z.id and g["top"] < 2.2)
+		for i in range(gaps.size() - 1, 0, -1):   # mischen, aber immer gleich
+			var j := rng.randi_range(0, i)
+			var tmp: Variant = gaps[i]
+			gaps[i] = gaps[j]
+			gaps[j] = tmp
+		var area: Rect2 = config.zone_bounds if z == zones[0] else z.bounds
+		area = area.grow(-0.8)
+		var excludes: Array = _zone_excludes.get(z.id, [])
+		var count := mini(int(LOOSE_BOOKS.get(z.id, 0)), gaps.size())
+		for k in count:
+			var g: Dictionary = gaps[k]
+			var w := clampf(float(g["w"]) * 0.7, 0.035, 0.08)
+			var h := minf(rng.randf_range(0.24, 0.36), float(g["gap"]) - 0.02)
+			var depth := rng.randf_range(0.2, 0.27)
+			var color: Color = BOOK_COLORS[rng.randi() % BOOK_COLORS.size()]
+			var model := MeshInstance3D.new()
+			var mesh := BoxMesh.new()
+			mesh.size = Vector3(w, h, depth)
+			mesh.material = _loose_book_mat(color)
+			model.mesh = mesh
+			var to := Transform3D(Basis(), Vector3(float(g["x"]), float(g["top"]) + h * 0.5, float(g["back"]) + float(g["dir"]) * depth * 0.5))
+			# Freie Stelle auf dem Boden suchen
+			var spot := Vector3.INF
+			for attempt in 40:
+				var p := Vector3(rng.randf_range(area.position.x, area.end.x), 0.0, rng.randf_range(area.position.y, area.end.y))
+				var free := p.distance_to(config.player_start) > 2.0
+				for r: Rect2 in excludes:
+					if r.grow(0.25).has_point(Vector2(p.x, p.z)):
+						free = false
+				if free:
+					spot = p
+					break
+			if spot == Vector3.INF:
+				continue
+			var lying := Basis(Vector3.UP, rng.randf() * TAU) * Basis(Vector3(0, 0, 1), PI * 0.5)
+			var from := Transform3D(lying, spot + Vector3.UP * (w * 0.5 + 0.002))
+			add_pickup("buch_%s_%d" % [z.id, k], z, model, from, to, Vector3(w, h, depth), 60)
+
+
+func _loose_book_mat(color: Color) -> Material:
+	var key := "loose_book_%s" % color.to_html()
+	if not _lib_mats.has(key):
+		var m := Materials.make("book") as ShaderMaterial
+		m.set_shader_parameter("tint", color)
+		_lib_mats[key] = m
+	return _lib_mats[key]
 
 
 func _build_tables(no_floor_dust: Array[Rect2]) -> void:

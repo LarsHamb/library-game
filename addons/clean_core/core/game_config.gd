@@ -11,6 +11,9 @@ extends Resource
 @export var mess_name := "Staub"              # "Staub", "Sand", "Schleim" ...
 @export var flake_name := "Flocken"           # Einheit für die Tempo-Anzeige
 @export var collectible_group_name := "Fundstücke"
+@export var group_name := "Gruppe"            # z.B. "Regalboden": alle Flocken einer Gruppe sauber = Bonus
+@export var pickup_name := "Fundsachen"        # z.B. "Verstreute Bücher"
+@export var pickup_prompt := "[Klick] zurücklegen"
 @export var welcome_text := ""
 
 @export_group("Aussehen")
@@ -35,6 +38,7 @@ extends Resource
 }
 @export var radar_duration := 6.0
 @export var milestones := {25: 500, 50: 1000, 75: 2000}   # Prozent -> Bonus
+@export var group_bonus := 25                   # Münzen, wenn eine Gruppe (Regalboden) ganz sauber ist
 @export var complete_at := 99.5
 @export var complete_bonus := 5000
 @export var player_start := Vector3.ZERO

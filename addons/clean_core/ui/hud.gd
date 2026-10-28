@@ -32,6 +32,7 @@ var _toast: Label
 var _toast_tween: Tween
 var _coins_tween: Tween
 var _help: Label
+var _prompt: Label
 var _help_tween: Tween
 var _menu: Control
 var _menu_button: Button
@@ -137,6 +138,12 @@ func _ready() -> void:
 	_anchor(cross, 0.5, 0.5, 0.5, 0.5, -14, -14, 14, 14)
 	_hud_items.add_child(cross)
 
+	# Hinweis unter dem Fadenkreuz, z.B. "[Klick] zurückstellen"
+	_prompt = _label(_hud_items, 18)
+	_prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_prompt.add_theme_color_override("font_color", config.ui_accent_color.lightened(0.35))
+	_anchor(_prompt, 0.5, 0.5, 0.5, 0.5, -300, 22, 300, 52)
+
 	# Meldungen unter der Bildmitte, auf einer eigenen Tafel
 	var toast_holder := CenterContainer.new()
 	toast_holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -201,6 +208,10 @@ func close_menu() -> void:
 	get_tree().paused = false
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	menu_closed.emit()
+
+
+func set_prompt(text: String) -> void:
+	_prompt.text = text
 
 
 ## Anzeige aus- und einblenden, z.B. solange Laden oder Karte offen sind.
