@@ -212,7 +212,7 @@ func _build_environment() -> void:
 func _build_hall() -> void:
 	var hx := HALL_SIZE.x * 0.5
 	var hz := HALL_SIZE.y * 0.5
-	box(Vector3(HALL_SIZE.x, 0.2, HALL_SIZE.y), Vector3(0, -0.1, 0), _floormat())
+	box(Vector3(HALL_SIZE.x, 0.2, HALL_SIZE.y), Vector3(0, -0.1, 0), _floor_mat())
 	var wall := mat("wall", Color(0.5, 0.4, 0.32), 0.95)
 	box(Vector3(HALL_SIZE.x, WALL_HEIGHT, 0.3), Vector3(0, WALL_HEIGHT * 0.5, -hz - 0.15), wall)
 	box(Vector3(HALL_SIZE.x, WALL_HEIGHT, 0.3), Vector3(0, WALL_HEIGHT * 0.5, hz + 0.15), wall)
