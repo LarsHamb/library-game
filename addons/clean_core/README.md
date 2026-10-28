@@ -16,13 +16,16 @@ erst per Hand, dann immer schneller“. Hier steht nichts über ein bestimmtes T
 | Schmutz | `world/mess_field.gd` (`CleanMessField`) | Zehntausende Flocken mit Dicke, Radar-Leuchten, Speichern |
 | Versteck | `world/collectible.gd` (`CleanCollectible`) | Glitzert unter dem Schmutz, taucht beim Putzen auf |
 | Leiter | `world/ladder.gd` (`CleanLadder`) | Kletterbereich |
+| Roboter | `bots/bot.gd` (`CleanBot`) | Grundlage für alles, was selbst putzt |
+| Schienen-Roboter | `bots/rail_bot.gd` (`CleanRailBot`) | Fährt eine Linie ab und putzt auf mehreren Höhen |
+| Drohne | `bots/drone.gd` (`CleanDrone`) | Sucht sich selbst Schmutz und saugt ihn von oben ab |
 | Spielfigur | `player/cleaner_player.gd` (`CleanPlayer`) | Ego-Perspektive, Werkzeugwechsel, Putz-Ring, Partikel, Klettern |
 | Anzeige | `ui/hud.gd`, `ui/shop.gd` | Fortschritt, Münzen, Tempo, Meldungen, Pause-Menü, Upgrade-Laden |
 | Geräusche | `audio/synth_sfx.gd` (`CleanSfx`) | Per Code erzeugt, keine Audiodateien nötig |
 
 ## Werte, auf die Upgrades wirken
 
-`radius`, `power`, `reach`, `speed`, `coin_mult`, `radar_cooldown`. Grundwerte stehen in
+`radius`, `power`, `reach`, `speed`, `coin_mult`, `radar_cooldown`, `bot_speed`, `bot_power`. Grundwerte stehen in
 `CleanGameConfig.base_stats`. Rechnung: `(Grundwert + Summe der Plus-Werte) × (1 + Summe der Prozent-Upgrades) × Faktoren der Sammelobjekte`.
 
 ## Ein neues Putzspiel bauen
@@ -36,6 +39,8 @@ erst per Hand, dann immer schneller“. Hier steht nichts über ein bestimmtes T
    - `_make_tool_visual(tool)` liefert das Modell jedes Werkzeugs (Kindknoten „Head“ wächst mit `player.set_tool_scale`)
    - optional: `_collectible_spots()`, `_make_collectible_model()`, `_build_environment()`, `_tool_display_name()`, `_on_stats_applied()`
 4. In `scenes/main.tscn` das Skript auf `<thema>_game.gd` umstellen.
-5. Schmutzfarbe ändern: `mess.base_color = Color(...)` am Anfang von `_build_world()`.
+5. Roboter: Upgrade mit `CleanUpgrade.make_bot(..., "rail")` oder `"drone"`. Jede Stufe kauft einen Roboter.
+   Schienen legt `_build_world()` mit `add_rail(from, to, heights, facing)` an; eigene Modelle über `_make_bot_model(kind)`.
+6. Schmutzfarbe ändern: `mess.base_color = Color(...)` am Anfang von `_build_world()`.
 
 Den Ordner `addons/clean_core` kann man unverändert in ein anderes Godot-4.7-Projekt kopieren.

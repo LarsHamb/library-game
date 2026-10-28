@@ -21,6 +21,8 @@ extends Resource
 	"speed": 1.0,            # Faktor auf Laufen und Klettern
 	"coin_mult": 1.0,        # Faktor auf Münzen pro Flocke
 	"radar_cooldown": 20.0,  # Sekunden
+	"bot_speed": 1.0,        # Faktor auf das Tempo aller Roboter
+	"bot_power": 1.0,        # Faktor auf die Putzkraft aller Roboter
 }
 @export var radar_duration := 6.0
 @export var milestones := {25: 500, 50: 1000, 75: 2000}   # Prozent -> Bonus

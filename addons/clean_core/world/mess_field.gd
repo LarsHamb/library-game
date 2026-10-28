@@ -163,6 +163,24 @@ func load_state(data: String) -> bool:
 	return true
 
 
+## Sucht eine Stelle mit Schmutz (für Roboter): prüft zufällige Flocken und nimmt die nächstgelegene.
+## Gibt Vector3.INF zurück, wenn nichts gefunden wurde.
+func find_mess_near(from: Vector3, max_height: float, rng: RandomNumberGenerator, samples := 40) -> Vector3:
+	if remaining == 0:
+		return Vector3.INF
+	var best := Vector3.INF
+	var best_d := INF
+	for n in samples:
+		var i := rng.randi() % total
+		if _alive[i] == 0 or _positions[i].y > max_height:
+			continue
+		var d := _positions[i].distance_squared_to(from)
+		if d < best_d:
+			best_d = d
+			best = _positions[i]
+	return best
+
+
 func progress_percent() -> float:
 	if total == 0:
 		return 100.0

@@ -9,6 +9,8 @@ extends Node3D
 ##   _make_tool_visual(tool)   Modell eines Werkzeugs in der Hand (Pflicht)
 ##   _collectible_spots()      Verstecke für die Sammelobjekte
 ##   _make_collectible_model(def), _build_environment(), _tool_display_name(tool), _on_stats_applied()
+##   _make_bot_model(kind)     Modell für Roboter (sonst einfache Standardmodelle)
+## Roboter: Upgrades mit spawns_bot = "rail" oder "drone". Schienen legt die Welt mit add_rail() an.
 
 var config: CleanGameConfig
 var state: CleanGameState
@@ -23,6 +25,8 @@ const RATE_WINDOW := 30        # Sekunden für die Tempo-Anzeige
 const AUTOSAVE_SECONDS := 30.0
 
 var _collectibles: Array[CleanCollectible] = []
+var _rails: Array[Dictionary] = []   # mögliche Schienen für Schienen-Roboter
+var _bots := {}                      # Roboter-Art -> Array der Roboter
 var _mats := {}
 var _radar_cooldown := 0.0
 var _radar_time := 0.0
@@ -55,6 +59,30 @@ func _collectible_spots() -> Array[Vector3]:
 
 
 func _make_collectible_model(_def: CleanCollectibleDef) -> Node3D:
+	return null
+
+
+func _make_bot_model(_kind: String) -> Node3D:
+	return null
+
+
+## Erzeugt Roboter Nummer index der Art kind. Eigene Arten: überschreiben und sonst super() aufrufen.
+func _spawn_bot(kind: String, index: int) -> CleanBot:
+	match kind:
+		"rail":
+			if index >= _rails.size():
+				return null
+			var rail: Dictionary = _rails[index]
+			var bot := CleanRailBot.new()
+			bot.rail_from = rail["from"]
+			bot.rail_to = rail["to"]
+			bot.heights.assign(rail["heights"])
+			bot.facing = rail["facing"]
+			return bot
+		"drone":
+			var drone := CleanDrone.new()
+			drone.position = config.player_start + Vector3(index * 0.8 - 2.0, 0, -2.0)
+			return drone
 	return null
 
 
@@ -95,6 +123,9 @@ func _ready() -> void:
 	add_child(mess)
 	_build_world()
 	mess.build()
+	# Nächste Schienen zuerst, damit die ersten Roboter in Sichtweite landen
+	_rails.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return (a["from"] as Vector3).distance_to(config.player_start) < (b["from"] as Vector3).distance_to(config.player_start))
 
 	player = CleanPlayer.new()
 	player.position = config.player_start
@@ -149,8 +180,10 @@ func _process(delta: float) -> void:
 	# Münz-Popups sammeln, damit nicht jedes Bild ein eigenes "+1" erscheint
 	_popup_timer -= delta
 	if _popup_coins > 0 and _popup_timer <= 0.0:
-		hud.coin_popup(_popup_coins)
-		sfx.coin()
+		# Nur eigenes Putzen klingelt; was Roboter verdienen, kommt leise dazu
+		if player.cleaning_mess:
+			hud.coin_popup(_popup_coins)
+			sfx.coin()
 		_popup_coins = 0
 		_popup_timer = 0.2
 	_radar_cooldown = maxf(0.0, _radar_cooldown - delta)
@@ -224,7 +257,38 @@ func apply_stats() -> void:
 	for t in config.tools:
 		player.set_unlocked(t, state.is_tool_unlocked(t))
 	player.set_stats(state.stat("radius"), state.stat("power"), state.stat("reach"), state.stat("speed"))
+	_sync_bots()
 	_on_stats_applied()
+
+
+## So viele Roboter wie gekauft, alle mit aktuellem Tempo und aktueller Kraft.
+func _sync_bots() -> void:
+	for u in config.upgrades:
+		if u.spawns_bot == "":
+			continue
+		var list: Array = _bots.get(u.spawns_bot, [])
+		_bots[u.spawns_bot] = list
+		while list.size() < state.level(u.id):
+			var bot := _spawn_bot(u.spawns_bot, list.size())
+			if bot == null:
+				break
+			bot.mess = mess
+			var model := _make_bot_model(u.spawns_bot)
+			if model:
+				bot.set_model(model)
+			add_child(bot)
+			list.append(bot)
+	for kind: String in _bots:
+		for bot: CleanBot in _bots[kind]:
+			bot.speed_mult = state.stat("bot_speed")
+			bot.power_mult = state.stat("bot_power")
+
+
+func bot_count() -> int:
+	var n := 0
+	for kind: String in _bots:
+		n += (_bots[kind] as Array).size()
+	return n
 
 
 func _try_radar() -> void:
@@ -254,6 +318,8 @@ func _refresh_hud() -> void:
 			keys.append("[%d] %s" % [t.hotkey, t.display_name])
 	if keys.size() > 1:
 		tool_text += "\n" + "  ".join(keys)
+	if bot_count() > 0:
+		tool_text += "\nRoboter im Einsatz: %d" % bot_count()
 	hud.set_values(mess.progress_percent(), state.coins, tool_text, state.affordable_count(), state.found.size())
 
 
@@ -402,6 +468,12 @@ func mat(key: String, color: Color, roughness := 0.8) -> StandardMaterial3D:
 	m.roughness = roughness
 	_mats[key] = m
 	return m
+
+
+## Schiene für einen Schienen-Roboter: Putzlinie von from bis to (y = Boden), Putzhöhen,
+## und die Richtung, in der der Roboter vor der Linie fährt.
+func add_rail(from: Vector3, to: Vector3, heights: Array[float], facing: Vector3) -> void:
+	_rails.append({"from": from, "to": to, "heights": heights, "facing": facing})
 
 
 ## Kletterbereich. foot_center = Mitte vor der Leiter am Boden, facing zeigt von der Leiter weg.
