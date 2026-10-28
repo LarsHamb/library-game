@@ -7,15 +7,15 @@ shader_type spatial;
 
 varying vec3 local_pos;
 varying vec3 local_normal;
-varying vec2 dust;
+varying vec3 dust;
 
-uniform vec3 dust_color : source_color = vec3(0.6, 0.57, 0.52);
+uniform vec3 dust_color : source_color = vec3(0.5, 0.48, 0.44);
 uniform vec3 tint : source_color = vec3(1.0);   // Einbandfarbe für einzelne Bücher ohne Instanzfarbe
 
 void vertex() {
 	local_pos = VERTEX;       // Würfel von -0.5 bis 0.5, pro Buch gestreckt
 	local_normal = NORMAL;
-	dust = INSTANCE_CUSTOM.rg;
+	dust = INSTANCE_CUSTOM.rgb;
 }
 
 void fragment() {
@@ -40,12 +40,15 @@ void fragment() {
 		float lines = 0.92 + 0.08 * sin(local_pos.z * 300.0);
 		c = mix(vec3(0.86, 0.8, 0.66) * lines, c, edge);
 	}
-	// Staubschicht: fleckig, oben dicker als am Rücken
-	float amount = dust.x * (local_normal.y > 0.5 ? 1.25 : 1.0);
+	// Staubschicht wie ein Schleier: oben auf dem Buch am dicksten, am Rücken nach unten dünner,
+	// die Einbandfarbe scheint immer etwas durch
+	float thick = mix(0.6, 1.0, dust.z);
+	float height = smoothstep(-0.5, 0.5, local_pos.y);
+	float amount = dust.x * thick * (local_normal.y > 0.5 ? 1.2 : mix(0.55, 1.0, height));
 	vec2 p = local_pos.xy * vec2(30.0, 18.0) + local_pos.zz * 11.0 + COLOR.b * 40.0;
 	float fluff = cc_fbm(p) * 0.7 + cc_noise(p * 6.0) * 0.3;
 	float t = amount * 1.3 - (1.0 - fluff) * 0.9;
-	float coat = min(smoothstep(0.0, 0.3, t), 0.95);   // 0 bei sauberem Buch, fast deckend bei dickem Staub
+	float coat = smoothstep(0.0, 0.3, t) * (0.35 + 0.45 * amount);   // 0 bei sauberem Buch, höchstens etwa 0,8
 	vec3 dusty = mix(dust_color * (0.85 + 0.3 * fluff), vec3(dot(c, vec3(0.33))), 0.15);
 	c = mix(c, dusty, coat);
 	ALBEDO = c;
