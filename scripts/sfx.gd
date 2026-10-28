@@ -5,18 +5,25 @@ extends Node
 const RATE := 22050
 
 var _swish: AudioStreamPlayer
+var _hum: AudioStreamPlayer
+var _book: AudioStreamPlayer
 var _coin: AudioStreamPlayer
 var _jingle: AudioStreamPlayer
 var _upgrade: AudioStreamPlayer
 var _deny: AudioStreamPlayer
 var _swish_level := 0.0
 var _swish_target := 0.0
+var _hum_level := 0.0
+var _hum_target := 0.0
 var _rng := RandomNumberGenerator.new()
 
 
 func _ready() -> void:
 	_swish = _player(_make_swish_loop(), -80.0)
 	_swish.play()
+	_hum = _player(_make_hum_loop(), -80.0)
+	_hum.play()
+	_book = _player(_make_tones([783.99, 987.77, 1174.66, 1567.98, 1975.53], 0.08, 0.6, 0.5), -6.0)
 	_coin = _player(_make_tones([1568.0, 2093.0], 0.045, 0.16, 0.5), -14.0)
 	_coin.max_polyphony = 4
 	_jingle = _player(_make_tones([523.25, 659.25, 783.99, 1046.5], 0.11, 0.45, 0.6), -8.0)
@@ -24,9 +31,19 @@ func _ready() -> void:
 	_deny = _player(_make_tones([233.0, 196.0], 0.09, 0.14, 0.5), -12.0)
 
 
-## Wedel-Rauschen an oder aus. Wird weich ein- und ausgeblendet.
-func set_cleaning(active: bool) -> void:
-	_swish_target = 1.0 if active else 0.0
+## Putzgeräusch: Wedel rauscht nur, wenn er Staub erwischt.
+## Der Sauger brummt, solange die Taste gedrückt ist, und wird lauter, wenn er Staub einsaugt.
+func set_cleaning(held: bool, hitting_dust: bool, vacuum: bool) -> void:
+	if vacuum:
+		_swish_target = 0.0
+		_hum_target = (0.6 if held else 0.0) + (0.4 if hitting_dust else 0.0)
+	else:
+		_hum_target = 0.0
+		_swish_target = 1.0 if hitting_dust else 0.0
+
+
+func book_found() -> void:
+	_book.play()
 
 
 func coin() -> void:
@@ -49,6 +66,9 @@ func deny() -> void:
 func _process(delta: float) -> void:
 	_swish_level = move_toward(_swish_level, _swish_target, delta * (8.0 if _swish_target > _swish_level else 4.0))
 	_swish.volume_db = linear_to_db(maxf(_swish_level * 0.55, 0.0001))
+	_hum_level = move_toward(_hum_level, _hum_target, delta * 5.0)
+	_hum.volume_db = linear_to_db(maxf(_hum_level * 0.35, 0.0001))
+	_hum.pitch_scale = 0.9 + _hum_level * 0.15
 
 
 func _player(stream: AudioStream, volume_db: float) -> AudioStreamPlayer:
@@ -75,6 +95,20 @@ func _make_swish_loop() -> AudioStreamWAV:
 		var t := float(i) / RATE
 		var strokes := 0.3 + 0.7 * pow(absf(sin(PI * 4.0 * t)), 2.0)
 		samples[i] = (fast - slow) * strokes * 1.6
+	return _to_stream(samples, true)
+
+
+## Motorbrummen mit Luftrauschen für den Staubsauger. Eine Sekunde, nahtlos geloopt.
+func _make_hum_loop() -> AudioStreamWAV:
+	var n := RATE
+	var samples := PackedFloat32Array()
+	samples.resize(n)
+	var air := 0.0
+	for i in n:
+		var t := float(i) / RATE
+		air += (_rng.randf_range(-1.0, 1.0) - air) * 0.5
+		var motor := sin(TAU * 120.0 * t) * 0.35 + sin(TAU * 240.0 * t) * 0.2 + sin(TAU * 360.0 * t) * 0.1
+		samples[i] = motor * 0.6 + air * 0.5
 	return _to_stream(samples, true)
 
 

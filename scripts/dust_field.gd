@@ -116,6 +116,7 @@ func clear_all() -> void:
 	for i in _alive.size():
 		if _alive[i] == 1:
 			_alive[i] = 0
+			_dirt[i] = 0.0
 			_fading[i] = -_rng.randf_range(0.0, 1.5)  # negativ = kleine Verzögerung
 			removed += 1
 			coins += roundi(_dirt_max[i])
@@ -130,6 +131,32 @@ func highlight(duration: float) -> void:
 	for i in _alive.size():
 		if _alive[i] == 1:
 			_apply_look(i)
+
+
+## Staubmenge jeder Flocke als Text (für den Spielstand).
+func save_state() -> String:
+	return Marshalls.raw_to_base64(_dirt.to_byte_array())
+
+
+## Stellt den Staub aus dem Spielstand wieder her. Passt die Flockenzahl nicht
+## (z.B. weil der Saal umgebaut wurde), bleibt der Staub frisch und es kommt false zurück.
+func load_state(data: String) -> bool:
+	if data.is_empty():
+		return false
+	var saved := Marshalls.base64_to_raw(data).to_float32_array()
+	if saved.size() != total:
+		return false
+	remaining = 0
+	for i in total:
+		_dirt[i] = saved[i]
+		if saved[i] <= 0.0:
+			_alive[i] = 0
+			multimesh.set_instance_transform(i, Transform3D(Basis().scaled(Vector3.ZERO), _positions[i]))
+		else:
+			_alive[i] = 1
+			remaining += 1
+			_apply_look(i)
+	return true
 
 
 func progress_percent() -> float:

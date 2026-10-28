@@ -1,10 +1,14 @@
 extends Node3D
-## Baut den Lesesaal auf und hält den Spielstand: Fortschritt, Münzen, Wedel-Upgrade und Staub-Radar.
+## Baut den Lesesaal auf und hält den Spielstand: Münzen, Upgrades, seltene Bücher,
+## Staub-Radar und Speichern/Laden.
 
 const DustField := preload("res://scripts/dust_field.gd")
 const Player := preload("res://scripts/player.gd")
 const Hud := preload("res://scripts/hud.gd")
 const Sfx := preload("res://scripts/sfx.gd")
+const Shop := preload("res://scripts/shop.gd")
+const RareBook := preload("res://scripts/rare_book.gd")
+const Upgrades := preload("res://scripts/upgrades.gd")
 
 # --- Raum ---
 const ZONE_NAME := "Großer Lesesaal"
@@ -27,41 +31,51 @@ const BOOK_COLORS := [
 	Color(0.2, 0.18, 0.16), Color(0.5, 0.2, 0.08),
 ]
 
-# --- Wirtschaft ---
-const UPGRADE_BASE_COST := 100
-const UPGRADE_COST_FACTOR := 1.9
+# --- Werte (Upgrades: siehe upgrades.gd) ---
 const BASE_RADIUS := 0.45
-const RADIUS_PER_LEVEL := 0.25
-const TOOL_NAMES := [
+const BASE_POWER := 6.0          # Staubmenge pro Sekunde in der Ringmitte
+const BASE_REACH := 3.2
+const DUSTER_NAMES := [
 	"Staubwedel", "Flauschwedel", "Großer Flauschwedel", "Federbesen", "Breitbesen",
 	"Riesenwedel", "Wedel XXL", "Turbowedel", "Wedel des Oberbibliothekars",
 ]
 const MILESTONES := {25: 500, 50: 1000, 75: 2000}   # Prozent -> Bonus-Münzen
 const COMPLETE_AT := 99.5   # ab hier wird der Rest automatisch weggepustet
 const COMPLETE_BONUS := 5000
-const BASE_POWER := 6.0          # Staubmenge pro Sekunde in der Ringmitte
-const POWER_PER_LEVEL := 1.0
 const RADAR_DURATION := 6.0
 const RADAR_COOLDOWN := 20.0
+const RATE_WINDOW := 30     # Sekunden für die Tempo-Anzeige
+const SAVE_PATH := "user://savegame.json"
+const AUTOSAVE_SECONDS := 30.0
 
 var coins := 0
-var upgrade_level := 0
+var levels := {}                      # Upgrade-ID -> Stufe
+var books_found: Array[String] = []
 var zone_done := false
 
 var dust: DustField
 var player: Player
 var hud: Hud
 var sfx: Sfx
+var shop: Shop
 
 var _milestones_hit: Array[int] = []
 var _rng := RandomNumberGenerator.new()
 var _world_body: StaticBody3D
 var _book_transforms: Array[Transform3D] = []
 var _book_colors := PackedColorArray()
+var _shelf_spots: Array[Vector3] = []   # mögliche Verstecke für seltene Bücher auf Regalböden
+var _rare_books: Array[RareBook] = []
 var _mats := {}
+var _coin_mult := 1.0
+var _radar_max := RADAR_COOLDOWN
 var _radar_cooldown := 0.0
+var _radar_time := 0.0
 var _popup_coins := 0
 var _popup_timer := 0.0
+var _rate_buckets: Array[int] = []
+var _rate_timer := 0.0
+var _autosave_timer := AUTOSAVE_SECONDS
 
 
 func _ready() -> void:
@@ -84,32 +98,53 @@ func _ready() -> void:
 	dust.add_area(Vector3.ZERO, HALL_SIZE - Vector2(0.4, 0.4), 0.2, 1.0, no_floor_dust)
 	_build_books()
 	dust.build()
-	dust.flakes_removed.connect(_on_flakes_removed)
 	_add_air_motes(hx)
 
 	player = Player.new()
 	player.position = Vector3(0, 0.05, 12.0)
 	player.dust_field = dust
 	add_child(player)
-	player.set_clean_radius(_radius_for(upgrade_level))
-	player.clean_power = _power_for(upgrade_level)
+	player.swept.connect(_on_swept)
+	player.tool_changed.connect(func(_t: int) -> void: _refresh_hud())
+
+	var loaded := _load_game()
+	_place_rare_books(no_floor_dust)
+	dust.flakes_removed.connect(_on_flakes_removed)
+	_apply_stats()
+	_rate_buckets.resize(RATE_WINDOW)
+	_rate_buckets.fill(0)
 
 	hud = Hud.new()
 	hud.settings_changed.connect(_on_settings_changed)
+	hud.menu_opened.connect(_save_game)
+	hud.quit_requested.connect(_save_and_quit)
+	hud.new_game_requested.connect(_new_game)
 	add_child(hud)
+	shop = Shop.new()
+	shop.buy_requested.connect(_buy)
+	add_child(shop)
 	_refresh_hud()
-	hud.toast("Willkommen im %s! Halte die linke Maustaste gedrückt, um Staub zu wedeln." % ZONE_NAME, 5.0)
+	if loaded:
+		hud.toast("Willkommen zurück im %s!" % ZONE_NAME, 4.0)
+	else:
+		hud.toast("Willkommen im %s! Halte die linke Maustaste gedrückt, um Staub zu wedeln." % ZONE_NAME, 5.0)
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("buy_upgrade"):
-		_try_buy_upgrade()
+	if event.is_action_pressed("open_shop"):
+		shop.open(coins, levels, books_found, _has_book("vacuum_plan"))
+		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed("radar"):
 		_try_radar()
 
 
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		_save_game()
+
+
 func _process(delta: float) -> void:
-	sfx.set_cleaning(player.cleaning_dust)
+	sfx.set_cleaning(player.is_cleaning_held(), player.cleaning_dust, player.tool == Player.Tool.VACUUM)
 	# Münz-Popups sammeln, damit nicht jedes Bild ein eigenes "+1" erscheint
 	_popup_timer -= delta
 	if _popup_coins > 0 and _popup_timer <= 0.0:
@@ -119,6 +154,25 @@ func _process(delta: float) -> void:
 		_popup_timer = 0.2
 	_radar_cooldown = maxf(0.0, _radar_cooldown - delta)
 	hud.set_radar(_radar_cooldown)
+	if _radar_time > 0.0:
+		_radar_time -= delta
+		if _radar_time <= 0.0:
+			for book in _rare_books:
+				book.show_beam(false)
+	# Tempo: Flocken der letzten 30 Sekunden, hochgerechnet auf eine Minute
+	_rate_timer += delta
+	if _rate_timer >= 1.0:
+		_rate_timer -= 1.0
+		_rate_buckets.pop_front()
+		_rate_buckets.append(0)
+		var sum := 0
+		for n in _rate_buckets:
+			sum += n
+		hud.set_rate(roundi(sum * 60.0 / RATE_WINDOW))
+	_autosave_timer -= delta
+	if _autosave_timer <= 0.0:
+		_autosave_timer = AUTOSAVE_SECONDS
+		_save_game()
 
 
 func _on_settings_changed(mouse_sensitivity: float, volume: float) -> void:
@@ -128,7 +182,9 @@ func _on_settings_changed(mouse_sensitivity: float, volume: float) -> void:
 
 # ---------------------------------------------------------------- Spielstand
 
-func _on_flakes_removed(_count: int, earned: int) -> void:
+func _on_flakes_removed(count: int, earned: int) -> void:
+	_rate_buckets[RATE_WINDOW - 1] += count
+	earned = roundi(earned * _coin_mult)
 	coins += earned
 	_popup_coins += earned
 	var percent := dust.progress_percent()
@@ -147,36 +203,65 @@ func _on_flakes_removed(_count: int, earned: int) -> void:
 	_refresh_hud()
 
 
-func _try_buy_upgrade() -> void:
-	if upgrade_level >= TOOL_NAMES.size() - 1:
-		hud.toast("Dein Wedel ist schon so groß wie er nur sein kann!")
+func _buy(id: String) -> void:
+	var upgrade := _upgrade_by_id(id)
+	var level := _lvl(id)
+	var max_level: int = upgrade["max"]
+	if level >= max_level:
+		return
+	var price := Upgrades.cost(upgrade, level)
+	if coins < price:
 		sfx.deny()
 		return
-	var cost := _upgrade_cost()
-	if coins < cost:
-		hud.toast("Dir fehlen noch %d Münzen für das Upgrade." % (cost - coins))
-		sfx.deny()
-		return
-	coins -= cost
-	upgrade_level += 1
-	player.set_clean_radius(_radius_for(upgrade_level))
-	player.clean_power = _power_for(upgrade_level)
-	player.set_tool_level(upgrade_level)
-	hud.toast("Neues Werkzeug: %s!" % TOOL_NAMES[upgrade_level])
+	coins -= price
+	levels[id] = level + 1
+	_apply_stats()
 	sfx.upgrade()
+	if id == "vacuum":
+		player.select_tool(Player.Tool.VACUUM)
+		hud.toast("Staubsauger gekauft! Wechsle mit 1 und 2 oder dem Mausrad.", 4.0)
+	shop.refresh(coins, levels, books_found, _has_book("vacuum_plan"))
 	_refresh_hud()
 
 
-func _upgrade_cost() -> int:
-	return roundi(UPGRADE_BASE_COST * pow(UPGRADE_COST_FACTOR, upgrade_level))
+## Rechnet alle Upgrades und Bücher in Werte für Spieler, Münzen und Radar um.
+func _apply_stats() -> void:
+	var radius := BASE_RADIUS + 0.25 * _lvl("radius") + (0.3 if _has_book("winds") else 0.0)
+	var power := BASE_POWER * (1.0 + 0.25 * _lvl("power")) * (1.5 if _has_book("janitor") else 1.0)
+	var reach := BASE_REACH + 0.6 * _lvl("reach")
+	var speed := (1.0 + 0.12 * _lvl("speed")) * (1.25 if _has_book("feet") else 1.0)
+	player.vacuum_unlocked = _lvl("vacuum") > 0 or _has_book("vacuum_plan")
+	player.set_stats(radius, power, reach, speed)
+	player.set_tool_level(_lvl("radius"))
+	_coin_mult = (1.0 + 0.25 * _lvl("value")) * (1.5 if _has_book("gold") else 1.0)
+	_radar_max = RADAR_COOLDOWN - 3.5 * _lvl("radar")
 
 
-func _radius_for(level: int) -> float:
-	return BASE_RADIUS + RADIUS_PER_LEVEL * level
+func _lvl(id: String) -> int:
+	return levels.get(id, 0)
 
 
-func _power_for(level: int) -> float:
-	return BASE_POWER + POWER_PER_LEVEL * level
+func _has_book(id: String) -> bool:
+	return books_found.has(id)
+
+
+func _upgrade_by_id(id: String) -> Dictionary:
+	for u: Dictionary in Upgrades.UPGRADES:
+		if u["id"] == id:
+			return u
+	return {}
+
+
+func _affordable_upgrades() -> int:
+	var n := 0
+	for u: Dictionary in Upgrades.UPGRADES:
+		var id: String = u["id"]
+		if id == "vacuum" and _has_book("vacuum_plan"):
+			continue
+		var max_level: int = u["max"]
+		if _lvl(id) < max_level and coins >= Upgrades.cost(u, _lvl(id)):
+			n += 1
+	return n
 
 
 func _try_radar() -> void:
@@ -186,16 +271,135 @@ func _try_radar() -> void:
 		hud.toast("Das Staub-Radar lädt noch %d Sekunden." % ceili(_radar_cooldown))
 		sfx.deny()
 		return
-	_radar_cooldown = RADAR_COOLDOWN
+	_radar_cooldown = _radar_max
+	_radar_time = RADAR_DURATION
 	dust.highlight(RADAR_DURATION)
-	hud.toast("Staub-Radar: Der restliche Staub leuchtet jetzt gelb.")
+	for book in _rare_books:
+		book.show_beam(true)
+	if _rare_books.any(func(b: RareBook) -> bool: return not b.found):
+		hud.toast("Staub-Radar: Der restliche Staub leuchtet gelb.\nGoldene Lichtsäulen zeigen versteckte Bücher!")
+	else:
+		hud.toast("Staub-Radar: Der restliche Staub leuchtet jetzt gelb.")
 	sfx.upgrade()
 
 
 func _refresh_hud() -> void:
-	var next_cost := -1 if upgrade_level >= TOOL_NAMES.size() - 1 else _upgrade_cost()
-	hud.set_values(ZONE_NAME, dust.progress_percent(), coins, TOOL_NAMES[upgrade_level],
-		upgrade_level, _radius_for(upgrade_level), next_cost)
+	var tool_text: String = DUSTER_NAMES[mini(_lvl("radius"), DUSTER_NAMES.size() - 1)]
+	if player.tool == Player.Tool.VACUUM:
+		tool_text = "Staubsauger"
+	if player.vacuum_unlocked:
+		tool_text += "   [1] Wedel  [2] Sauger"
+	hud.set_values(ZONE_NAME, dust.progress_percent(), coins, tool_text,
+		_affordable_upgrades(), books_found.size(), Upgrades.BOOKS.size())
+
+
+# ---------------------------------------------------------------- Seltene Bücher
+
+## Versteckt die noch nicht gefundenen Bücher: drei auf dem Boden, zwei auf hohen Regalböden.
+## Die Plätze sind immer gleich, damit sie nach dem Laden noch stimmen.
+func _place_rare_books(no_floor_dust: Array[Rect2]) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 4242
+	var spots: Array[Vector3] = []
+	var hx := HALL_SIZE.x * 0.5 - 1.0
+	var hz := HALL_SIZE.y * 0.5 - 1.0
+	while spots.size() < 3:
+		var p := Vector3(rng.randf_range(-hx, hx), 0.0, rng.randf_range(-hz, hz))
+		var free := true
+		for r in no_floor_dust:
+			if r.grow(0.3).has_point(Vector2(p.x, p.z)):
+				free = false
+		if free and p.distance_to(Vector3(0, 0, 12)) > 4.0:
+			spots.append(p)
+	var high_spots := _shelf_spots.filter(func(v: Vector3) -> bool: return v.y > 1.5)
+	while spots.size() < Upgrades.BOOKS.size():
+		spots.append(high_spots[rng.randi() % high_spots.size()])
+
+	for i in Upgrades.BOOKS.size():
+		var id: String = Upgrades.BOOKS[i]["id"]
+		if _has_book(id):
+			continue
+		var book := RareBook.new()
+		book.book_id = id
+		book.position = spots[i]
+		add_child(book)
+		_rare_books.append(book)
+
+
+func _on_swept(point: Vector3, radius: float) -> void:
+	for book in _rare_books:
+		if not book.found and point.distance_to(book.global_position) < radius + 0.1:
+			_collect_book(book)
+
+
+func _collect_book(book: RareBook) -> void:
+	book.reveal()
+	_rare_books.erase(book)
+	books_found.append(book.book_id)
+	var info := Upgrades.book_by_id(book.book_id)
+	_apply_stats()
+	sfx.book_found()
+	hud.toast("Seltenes Buch gefunden: »%s«\n%s" % [info["name"], info["perk"]], 5.0)
+	if book.book_id == "vacuum_plan":
+		player.select_tool(Player.Tool.VACUUM)
+	_refresh_hud()
+	_save_game()
+
+
+# ---------------------------------------------------------------- Speichern
+
+func _save_game() -> void:
+	var data := {
+		"version": 1,
+		"coins": coins,
+		"levels": levels,
+		"books": books_found,
+		"milestones": _milestones_hit,
+		"zone_done": zone_done,
+		"player": [player.position.x, player.position.y, player.position.z, player.rotation.y],
+		"tool": player.tool,
+		"dust": dust.save_state(),
+	}
+	var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+	if file:
+		file.store_string(JSON.stringify(data))
+
+
+func _load_game() -> bool:
+	if not FileAccess.file_exists(SAVE_PATH):
+		return false
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(SAVE_PATH))
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return false
+	var data: Dictionary = parsed
+	coins = int(data.get("coins", 0))
+	var saved_levels: Dictionary = data.get("levels", {})
+	for id: String in saved_levels:
+		levels[id] = int(saved_levels[id])
+	for id: Variant in data.get("books", []):
+		books_found.append(str(id))
+	for m: Variant in data.get("milestones", []):
+		_milestones_hit.append(int(m))
+	zone_done = bool(data.get("zone_done", false))
+	var p: Array = data.get("player", [])
+	if p.size() == 4:
+		player.position = Vector3(p[0], p[1], p[2])
+		player.rotation.y = p[3]
+	dust.load_state(str(data.get("dust", "")))
+	_apply_stats()
+	player.select_tool(int(data.get("tool", 0)) as Player.Tool)
+	return true
+
+
+func _save_and_quit() -> void:
+	_save_game()
+	get_tree().quit()
+
+
+func _new_game() -> void:
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
+	get_tree().paused = false
+	get_tree().reload_current_scene()
 
 
 # ---------------------------------------------------------------- Eingabe
@@ -207,7 +411,9 @@ func _setup_input() -> void:
 	_add_key_action("move_right", [KEY_D, KEY_RIGHT])
 	_add_key_action("sprint", [KEY_SHIFT])
 	_add_key_action("jump", [KEY_SPACE])
-	_add_key_action("buy_upgrade", [KEY_U, KEY_E])
+	_add_key_action("open_shop", [KEY_U, KEY_TAB])
+	_add_key_action("tool_1", [KEY_1])
+	_add_key_action("tool_2", [KEY_2])
 	_add_key_action("radar", [KEY_R])
 	if not InputMap.has_action("clean"):
 		InputMap.add_action("clean")
@@ -331,6 +537,7 @@ func _build_case(cx: float, cz: float, dir: float, width: float, height: float, 
 		if i < dusty:
 			var strip := d - 0.36
 			var extra := UPPER_BOARD_DIRT if board_y > 1.5 else 0.0
+			_shelf_spots.append(Vector3(cx + _rng.randf_range(-inner * 0.4, inner * 0.4), top, cz + dir * (d * 0.5 - 0.02 - strip * 0.5)))
 			dust.add_area(Vector3(cx, top, cz + dir * (d * 0.5 - 0.02 - strip * 0.5)),
 				Vector2(inner - 0.04, strip), 0.075, 0.42, no_excludes, extra)
 	if dusty > 0:
