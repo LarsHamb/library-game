@@ -10,6 +10,7 @@ extends Node3D
 ##   _collectible_spots()      Verstecke für die Sammelobjekte
 ##   _make_collectible_model(def), _build_environment(), _tool_display_name(tool), _on_stats_applied()
 ##   _make_bot_model(kind)     Modell für Roboter (sonst einfache Standardmodelle)
+##   _title_view()             Kamerafahrt hinter dem Startmenü
 ##   _screenshot_views()       Kamerapunkte für den Foto-Rundgang (Start mit: godot --path . -- --screenshots)
 ## _build_environment() setzt `environment`; apply_quality() schaltet darauf je nach Grafikstufe Effekte an und aus.
 ## Roboter: Upgrades mit spawns_bot = "rail" oder "drone". Schienen legt die Welt mit add_rail() an.
@@ -27,6 +28,7 @@ var sfx: CleanSfx
 var shop: CleanShop
 var world_body: StaticBody3D   # sammelt alle Kollisionsformen der Welt (siehe box/add_collider)
 var environment: Environment   # von _build_environment() gesetzt
+var music: AudioStreamPlayer
 
 const RATE_WINDOW := 30        # Sekunden für die Tempo-Anzeige
 const AUTOSAVE_SECONDS := 30.0
@@ -108,6 +110,11 @@ func _build_environment() -> void:
 	environment = env
 
 
+## Langsame Kamerafahrt hinter dem Startmenü: {"from": Vector3, "to": Vector3, "look": Vector3}. Leer = keine.
+func _title_view() -> Dictionary:
+	return {}
+
+
 ## Kamerapunkte für den Foto-Rundgang: je {"name": "lesesaal", "pos": Vector3, "look": Vector3}.
 func _screenshot_views() -> Array[Dictionary]:
 	return [{"name": "start", "pos": config.player_start + Vector3(0, 1.7, 0), "look": config.player_start + Vector3(0, 1.5, -5)}]
@@ -168,7 +175,13 @@ func _ready() -> void:
 	hud.quit_requested.connect(_save_and_quit)
 	hud.new_game_requested.connect(_new_game)
 	hud.quality_changed.connect(apply_quality)
+	hud.menu_opened.connect(_update_menu_info)
+	_start_music()
+	hud.music_changed.connect(func(v: float) -> void:
+		if music:
+			music.volume_db = linear_to_db(maxf(v * 0.6, 0.0001)))
 	add_child(hud)
+	_start_title_camera()
 	shop = CleanShop.new()
 	shop.state = state
 	shop.buy_requested.connect(_buy)
@@ -296,6 +309,62 @@ func _screenshot_tour() -> void:
 		i += 1
 	print("Fotos gespeichert in ", dir)
 	get_tree().quit()
+
+
+func _start_music() -> void:
+	if config.music_file == "" or not ResourceLoader.exists(config.music_file):
+		return
+	var stream: AudioStream = load(config.music_file)
+	if stream is AudioStreamOggVorbis:
+		(stream as AudioStreamOggVorbis).loop = true
+	elif stream is AudioStreamMP3:
+		(stream as AudioStreamMP3).loop = true
+	elif stream is AudioStreamWAV:
+		var wav := stream as AudioStreamWAV
+		wav.loop_mode = AudioStreamWAV.LOOP_FORWARD
+		wav.loop_end = int(wav.get_length() * wav.mix_rate)
+	music = AudioStreamPlayer.new()
+	music.stream = stream
+	music.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(music)
+	music.play()
+
+
+## Solange das Startmenü offen ist, gleitet eine Kamera langsam durch die Welt.
+func _start_title_camera() -> void:
+	var view := _title_view()
+	if view.is_empty():
+		return
+	var from: Vector3 = view["from"]
+	var to: Vector3 = view["to"]
+	var look: Vector3 = view["look"]
+	var player_cam := get_viewport().get_camera_3d()
+	var cam := Camera3D.new()
+	cam.fov = 70.0
+	cam.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(cam)
+	cam.make_current()
+	var move := func(k: float) -> void:
+		cam.global_position = from.lerp(to, k)
+		cam.look_at(look)
+	move.call(0.0)
+	var tween := cam.create_tween().set_loops()
+	tween.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	tween.tween_method(move, 0.0, 1.0, 40.0).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	tween.tween_method(move, 1.0, 0.0, 40.0).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	hud.menu_closed.connect(func() -> void:
+		if player_cam:
+			player_cam.make_current()
+		cam.queue_free(), CONNECT_ONE_SHOT)
+
+
+func _update_menu_info() -> void:
+	var text := "%s: %.1f %% sauber" % [config.zone_name, mess.progress_percent()]
+	if zones.size() > 1:
+		text = "Gesamt: %.1f %% sauber" % overall_percent()
+	if not config.collectibles.is_empty():
+		text += "   ·   %s: %d / %d" % [config.collectible_group_name, state.found.size(), config.collectibles.size()]
+	hud.set_menu_info(text)
 
 
 func _tour_wait(seconds: float) -> void:

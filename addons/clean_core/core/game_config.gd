@@ -5,6 +5,7 @@ extends Resource
 
 @export_group("Texte")
 @export var game_title := "Putzspiel"
+@export var game_subtitle := ""
 @export var zone_name := "Zone 1"
 @export var currency_name := "Münzen"
 @export var mess_name := "Staub"              # "Staub", "Sand", "Schleim" ...
@@ -18,6 +19,7 @@ extends Resource
 @export var ui_text_color := Color(0.96, 0.92, 0.82)
 @export var ui_accent_color := Color(0.85, 0.66, 0.32)
 @export var ui_panel_color := Color(0.1, 0.07, 0.05, 0.86)
+@export_file("*.ogg", "*.wav", "*.mp3") var music_file := ""   # läuft in Schleife
 
 @export_group("Grundwerte")
 ## Grundwerte, auf die Upgrades und Sammelobjekte wirken.

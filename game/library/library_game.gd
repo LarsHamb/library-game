@@ -198,6 +198,10 @@ func _make_vacuum() -> Node3D:
 	return vacuum
 
 
+func _title_view() -> Dictionary:
+	return {"from": Vector3(-7.0, 4.8, 13.0), "to": Vector3(7.0, 4.2, 13.0), "look": Vector3(0, 2.2, -5.0)}
+
+
 ## Kamerapunkte für den Foto-Rundgang (godot --path . -- --screenshots).
 func _screenshot_views() -> Array[Dictionary]:
 	return [
