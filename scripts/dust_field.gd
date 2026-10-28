@@ -1,12 +1,16 @@
 extends MultiMeshInstance3D
 ## Aller Staub der Zone als ein einziges MultiMesh.
 ## So bleiben auch zehntausende Staubflocken flüssig spielbar.
+## Jede Flocke hat eine Staubmenge: Dicke Flocken brauchen mehrere Wedel-Durchgänge.
 
-signal flakes_removed(count: int)
+signal flakes_removed(count: int, coins: int)
 
 const CELL_SIZE := 1.0     # Rastergröße für die schnelle Suche nach Flocken
 const FADE_TIME := 0.3     # so lange schrumpft eine Flocke, bevor sie weg ist
 const FLAKE_SIZE := 0.34   # Grundgröße einer Flocke in Metern
+const MIN_DIRT := 1.0      # dünnster Staub
+const MAX_DIRT := 3.0      # dickster Staub (in Ecken und Nischen)
+const HIGHLIGHT_COLOR := Color(1.0, 0.85, 0.2, 1.0)
 
 var total := 0
 var remaining := 0
@@ -15,18 +19,25 @@ var _positions := PackedVector3Array()
 var _transforms: Array[Transform3D] = []
 var _colors := PackedColorArray()
 var _alive := PackedByteArray()
+var _dirt := PackedFloat32Array()      # aktuelle Staubmenge pro Flocke
+var _dirt_max := PackedFloat32Array()  # Staubmenge zu Beginn
 var _grid := {}    # Vector3i -> Array der Flocken-Indizes
 var _fading := {}  # Index -> vergangene Zeit beim Verschwinden
+var _highlight_time := 0.0
 var _rng := RandomNumberGenerator.new()
+var _thickness := FastNoiseLite.new()
 
 
 func _init() -> void:
 	_rng.seed = 1234
+	_thickness.seed = 99
+	_thickness.frequency = 0.12
 	cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
 ## Verteilt Flocken gleichmäßig (mit etwas Zufall) auf einer waagrechten Fläche.
-func add_area(center: Vector3, size: Vector2, spacing: float, flake_scale := 1.0, excludes: Array[Rect2] = []) -> void:
+## extra_dirt hebt die Staubmenge an, z.B. auf hohen Regalböden, wo nie jemand putzt.
+func add_area(center: Vector3, size: Vector2, spacing: float, flake_scale := 1.0, excludes: Array[Rect2] = [], extra_dirt := 0.0) -> void:
 	var nx := int(size.x / spacing)
 	var nz := int(size.y / spacing)
 	for ix in nx:
@@ -37,11 +48,14 @@ func add_area(center: Vector3, size: Vector2, spacing: float, flake_scale := 1.0
 				-size.y * 0.5 + (iz + _rng.randf()) * spacing)
 			if _is_excluded(p, excludes):
 				continue
-			var s := flake_scale * _rng.randf_range(0.75, 1.3)
+			# Rauschen sorgt für dicke und dünne Stellen statt gleichmäßigem Grau
+			var k := clampf(_thickness.get_noise_3d(p.x, p.y * 3.0, p.z) * 1.4 + 0.45 + extra_dirt, 0.0, 1.0)
+			var dirt := lerpf(MIN_DIRT, MAX_DIRT, k)
+			var s := flake_scale * _rng.randf_range(0.75, 1.3) * (0.85 + 0.15 * dirt)
 			var basis := Basis(Vector3.UP, _rng.randf() * TAU).scaled(Vector3(s, 1.0, s))
-			var shade := _rng.randf_range(-0.06, 0.06)
-			var color := Color(0.66 + shade, 0.62 + shade, 0.55 + shade, _rng.randf_range(0.75, 0.95))
-			_add_flake(Transform3D(basis, p), color)
+			var shade := _rng.randf_range(-0.05, 0.05) - 0.07 * (dirt - 1.0)
+			var color := Color(0.68 + shade, 0.64 + shade, 0.57 + shade, _rng.randf_range(0.8, 0.95))
+			_add_flake(Transform3D(basis, p), color, dirt)
 
 
 ## Erzeugt das MultiMesh. Einmal aufrufen, nachdem alle Flächen hinzugefügt wurden.
@@ -59,12 +73,15 @@ func build() -> void:
 	remaining = total
 
 
-## Entfernt alle Flocken im Umkreis und gibt zurück, wie viele es waren.
-func clean_at(point: Vector3, radius: float) -> int:
-	var r2 := radius * radius
+## Wedelt im Umkreis: Jede Flocke verliert Staub (in der Mitte mehr als am Rand).
+## Gibt zurück, wie viele Flocken berührt wurden.
+func clean_at(point: Vector3, radius: float, amount: float) -> int:
 	var min_cell := _cell(point - Vector3.ONE * radius)
 	var max_cell := _cell(point + Vector3.ONE * radius)
+	var r2 := radius * radius
+	var touched := 0
 	var removed := 0
+	var coins := 0
 	for x in range(min_cell.x, max_cell.x + 1):
 		for y in range(min_cell.y, max_cell.y + 1):
 			for z in range(min_cell.z, max_cell.z + 1):
@@ -72,27 +89,47 @@ func clean_at(point: Vector3, radius: float) -> int:
 				if not _grid.has(key):
 					continue
 				for i: int in _grid[key]:
-					if _alive[i] == 1 and _positions[i].distance_squared_to(point) <= r2:
+					if _alive[i] == 0:
+						continue
+					var d2 := _positions[i].distance_squared_to(point)
+					if d2 > r2:
+						continue
+					touched += 1
+					_dirt[i] -= amount * (1.0 - 0.5 * sqrt(d2) / radius)
+					if _dirt[i] <= 0.0:
 						_alive[i] = 0
 						_fading[i] = 0.0
 						removed += 1
+						coins += roundi(_dirt_max[i])
+					else:
+						_apply_look(i)
 	if removed > 0:
 		remaining -= removed
-		flakes_removed.emit(removed)
-	return removed
+		flakes_removed.emit(removed, coins)
+	return touched
 
 
 ## Pustet den Rest der Zone auf einmal weg (z.B. als Belohnung).
 func clear_all() -> void:
 	var removed := 0
+	var coins := 0
 	for i in _alive.size():
 		if _alive[i] == 1:
 			_alive[i] = 0
 			_fading[i] = -_rng.randf_range(0.0, 1.5)  # negativ = kleine Verzögerung
 			removed += 1
+			coins += roundi(_dirt_max[i])
 	if removed > 0:
 		remaining -= removed
-		flakes_removed.emit(removed)
+		flakes_removed.emit(removed, coins)
+
+
+## Staub-Radar: Alle übrigen Flocken leuchten eine Weile auf.
+func highlight(duration: float) -> void:
+	_highlight_time = duration
+	for i in _alive.size():
+		if _alive[i] == 1:
+			_apply_look(i)
 
 
 func progress_percent() -> float:
@@ -102,6 +139,12 @@ func progress_percent() -> float:
 
 
 func _process(delta: float) -> void:
+	if _highlight_time > 0.0:
+		_highlight_time -= delta
+		if _highlight_time <= 0.0:
+			for i in _alive.size():
+				if _alive[i] == 1:
+					_apply_look(i)
 	if _fading.is_empty():
 		return
 	for i: int in _fading.keys():
@@ -116,15 +159,34 @@ func _process(delta: float) -> void:
 			continue
 		_fading[i] = t
 		var base := _transforms[i]
-		multimesh.set_instance_transform(i, Transform3D(base.basis.scaled(Vector3.ONE * (1.0 - k)), base.origin + Vector3.UP * k * 0.08))
+		var s := _look_scale(i) * (1.0 - k)
+		multimesh.set_instance_transform(i, Transform3D(base.basis.scaled(Vector3.ONE * s), base.origin + Vector3.UP * k * 0.08))
 
 
-func _add_flake(t: Transform3D, color: Color) -> void:
+## Flocke schrumpft und wird blasser, je weniger Staub sie noch hat.
+func _apply_look(i: int) -> void:
+	var base := _transforms[i]
+	multimesh.set_instance_transform(i, Transform3D(base.basis.scaled(Vector3.ONE * _look_scale(i)), base.origin))
+	if _highlight_time > 0.0:
+		multimesh.set_instance_color(i, HIGHLIGHT_COLOR)
+	else:
+		var c := _colors[i]
+		c.a *= 0.4 + 0.6 * clampf(_dirt[i] / _dirt_max[i], 0.0, 1.0)
+		multimesh.set_instance_color(i, c)
+
+
+func _look_scale(i: int) -> float:
+	return 0.5 + 0.5 * clampf(_dirt[i] / _dirt_max[i], 0.0, 1.0)
+
+
+func _add_flake(t: Transform3D, color: Color, dirt: float) -> void:
 	var index := _transforms.size()
 	_transforms.append(t)
 	_positions.append(t.origin)
 	_colors.append(color)
 	_alive.append(1)
+	_dirt.append(dirt)
+	_dirt_max.append(dirt)
 	var key := _cell(t.origin)
 	if not _grid.has(key):
 		_grid[key] = []
