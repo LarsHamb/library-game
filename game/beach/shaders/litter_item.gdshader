@@ -2,7 +2,7 @@
 // Die Instanz zeigt nur die Form, deren Nummer in ihrer Farbe (Alpha × 16) steht.
 // INSTANCE_CUSTOM kommt vom Kern: r = Restmüll 0..1 (0 = aufgesammelt), g = Müll-Radar.
 shader_type spatial;
-render_mode cull_disabled, diffuse_burley;
+render_mode cull_disabled, diffuse_toon, specular_toon;
 
 #include "res://addons/clean_core/shaders/noise.gdshaderinc"
 

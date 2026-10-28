@@ -19,7 +19,11 @@ static func create() -> CleanGameConfig:
 	c.group_bonus = 60
 	c.pickup_name = "Muscheln"
 	c.pickup_prompt = "[Klick] Muschel einsammeln"
-	c.welcome_text = "Willkommen in der Möwenbucht! Die Flut hat jede Menge Müll angespült.\nLinke Maustaste halten: Müll mit der Greifzange aufsammeln. Muscheln anklicken: einsammeln."
+	c.welcome_text = "Willkommen in der Möwenbucht! Die Flut hat jede Menge Müll angespült.\nKlick: ein Teil mit der Greifzange aufheben. Ist der Müllsack voll, bring ihn zu einem Container."
+	c.carry_name = "Müllsack"
+	c.deposit_name = "Container"
+	c.help_text = "WASD laufen · Shift rennen · Leertaste springen\nKlicken oder Maustaste halten: Müll aufheben · Ziffern oder Mausrad: Werkzeug wechseln\nVoller Müllsack: zum Container laufen, er leert sich von selbst\nU: Laden · R: Radar · M: Karte · Esc: Menü · F1: diese Hilfe"
+	c.base_stats["capacity"] = 25.0
 	c.player_start = Vector3(0.0, 0.05, -9.0)
 	c.player_start_yaw = PI   # Blick aufs Meer
 	c.save_file = "user://strand_spielstand.json"
@@ -38,8 +42,8 @@ static func create() -> CleanGameConfig:
 	c.complete_bonus = 6000
 
 	c.tools.assign([
-		# Greifzange: kleiner Radius, man sammelt Stück für Stück. SUCK = der Müll fliegt zu einem hin
-		CleanTool.make("grabber", "Greifzange", 1, CleanTool.Style.SUCK, 0.62, 1.0, 1.0),
+		# Greifzange: hebt Stück für Stück auf (das Teil, das dem Zielpunkt am nächsten ist)
+		CleanTool.make("grabber", "Greifzange", 1, CleanTool.Style.PICK, 0.9, 1.0, 1.0),
 		CleanTool.make("rake", "Strandrechen", 2, CleanTool.Style.SWEEP, 1.7, 0.75, 1.05, false),
 		CleanTool.make("vacuum", "Müllsauger", 3, CleanTool.Style.SUCK, 0.95, 3.0, 1.5, false),
 		# Nur damit lösen sich Geisternetze von Felsen und Buhnen
@@ -48,6 +52,7 @@ static func create() -> CleanGameConfig:
 
 	# make(id, Name, Beschreibung, Preis, Preisfaktor pro Stufe, max. Stufe, Wert, +pro Stufe, ×pro Stufe, Werkzeug)
 	var tools := [
+		CleanUpgrade.make("bag", "Größerer Müllsack", "+20 Teile passen in den Müllsack", 60, 1.55, 12, "capacity", 20.0),
 		CleanUpgrade.make("radius", "Breitere Greifer", "+0,22 m Radius für alle Werkzeuge", 100, 1.75, 8, "radius", 0.22),
 		CleanUpgrade.make("power", "Fester Griff", "+25 % Sammeltempo", 80, 1.7, 10, "power", 0.0, 0.25),
 		CleanUpgrade.make("reach", "Teleskopstiel", "+0,6 m Reichweite", 150, 2.0, 5, "reach", 0.6),

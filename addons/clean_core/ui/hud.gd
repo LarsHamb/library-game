@@ -25,6 +25,10 @@ var _zone_label: Label
 var _progress: ProgressBar
 var _rate_label: Label
 var _coins_label: Label
+var _carry_box: Control
+var _carry_label: Label
+var _carry_bar: ProgressBar
+var _carry_full := false
 var _upgrade_label: Label
 var _radar_label: Label
 var _toast_panel: PanelContainer
@@ -113,6 +117,22 @@ func _ready() -> void:
 	_coins_label = _label(coins_box, 32, true)
 	_coins_label.add_theme_color_override("font_color", config.ui_accent_color.lightened(0.3))
 
+	# Darunter: Sack (nur wenn das Spiel einen hat)
+	var carry := _panel(_hud_items)
+	_anchor(carry, 1.0, 0.0, 1.0, 0.0, -290, 72, -20, 136)
+	var carry_box := VBoxContainer.new()
+	carry_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	carry_box.add_theme_constant_override("separation", 4)
+	carry.add_child(carry_box)
+	_carry_label = _label(carry_box, 17, true)
+	_carry_bar = ProgressBar.new()
+	_carry_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_carry_bar.show_percentage = false
+	_carry_bar.custom_minimum_size = Vector2(0, 12)
+	carry_box.add_child(_carry_bar)
+	_carry_box = carry
+	carry.visible = false
+
 	# Unten rechts: Werkzeug, Upgrade und Radar
 	var up := _panel(_hud_items)
 	_anchor(up, 1.0, 1.0, 1.0, 1.0, -440, -150, -20, -20)
@@ -127,9 +147,10 @@ func _ready() -> void:
 
 	# Unten links: Steuerung (blendet sich nach einer Weile aus, F1 holt sie zurück)
 	_help = _label(_hud_items, 15)
-	_help.text = "WASD laufen · Shift rennen · Leertaste springen · An Leitern: W hoch, S runter\nLinke Maustaste halten: putzen · Ziffern oder Mausrad: Werkzeug wechseln\nU: Upgrade-Laden · R: Radar · M: Karte · Esc: Menü · F1: diese Hilfe"
+	_help.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+	_help.text = config.help_text if config.help_text != "" else "WASD laufen · Shift rennen · Leertaste springen · An Leitern: W hoch, S runter\nLinke Maustaste halten: putzen · Ziffern oder Mausrad: Werkzeug wechseln\nU: Upgrade-Laden · R: Radar · M: Karte · Esc: Menü · F1: diese Hilfe"
 	_help.modulate = Color(1, 1, 1, 0.8)
-	_anchor(_help, 0.0, 1.0, 0.0, 1.0, 22, -90, 720, -20)
+	_anchor(_help, 0.0, 1.0, 0.0, 1.0, 22, -112, 760, -14)
 	_fade_help(HELP_SECONDS)
 
 	# Fadenkreuz
@@ -236,6 +257,27 @@ func set_values(zone_name: String, percent: float, coins: int, tool_text: String
 	if not config.collectibles.is_empty():
 		text += "%s: %d / %d" % [config.collectible_group_name, found, config.collectibles.size()]
 	_upgrade_label.text = text
+
+
+## Füllstand des Sacks; leerer Name = ausblenden. Wird jedes Bild aufgerufen.
+func set_carry(carry_name: String, carried: int, capacity: int) -> void:
+	_carry_box.visible = carry_name != ""
+	if carry_name == "":
+		return
+	var full := carried >= capacity
+	_carry_label.text = ("%s voll! %d / %d" if full else "%s: %d / %d") % [carry_name, carried, capacity]
+	_carry_bar.max_value = capacity
+	_carry_bar.value = carried
+	if full != _carry_full:
+		_carry_full = full
+		var color := Color(1.0, 0.45, 0.35) if full else config.ui_text_color
+		_carry_label.add_theme_color_override("font_color", color)
+		_carry_bar.modulate = Color(1.0, 0.55, 0.5) if full else Color.WHITE
+		if full:
+			_carry_box.pivot_offset = _carry_box.size * 0.5
+			var tween := create_tween()
+			tween.tween_property(_carry_box, "scale", Vector2.ONE * 1.12, 0.12)
+			tween.tween_property(_carry_box, "scale", Vector2.ONE, 0.25).set_trans(Tween.TRANS_BACK)
 
 
 func set_rate(flakes_per_minute: int, overall_percent: float) -> void:

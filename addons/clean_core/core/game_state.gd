@@ -10,6 +10,8 @@ var found: Array[String] = []         # IDs gefundener Sammelobjekte
 var milestones_hit: Array[String] = []   # "zonen-id:prozent"
 var zones_done: Array[String] = []
 var returned: Array[String] = []      # IDs zurückgestellter Fundsachen (CleanPickup)
+var carried := 0                      # Teile im Sack (siehe Grundwert "capacity")
+var carried_coins := 0                # was sie beim Leeren bringen
 
 
 func _init(p_config: CleanGameConfig) -> void:
@@ -116,11 +118,15 @@ func to_dict() -> Dictionary:
 		"milestones": milestones_hit,
 		"zones_done": zones_done,
 		"returned": returned,
+		"carried": carried,
+		"carried_coins": carried_coins,
 	}
 
 
 func from_dict(data: Dictionary) -> void:
 	coins = int(data.get("coins", 0))
+	carried = int(data.get("carried", 0))
+	carried_coins = int(data.get("carried_coins", 0))
 	var saved_levels: Dictionary = data.get("levels", {})
 	for id: String in saved_levels:
 		levels[id] = int(saved_levels[id])

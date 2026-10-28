@@ -12,6 +12,8 @@ var _coin: AudioStreamPlayer
 var _jingle: AudioStreamPlayer
 var _upgrade: AudioStreamPlayer
 var _deny: AudioStreamPlayer
+var _pick: AudioStreamPlayer
+var _dump: AudioStreamPlayer
 var _swish_level := 0.0
 var _swish_target := 0.0
 var _hum_level := 0.0
@@ -30,6 +32,9 @@ func _ready() -> void:
 	_jingle = _player(_make_tones([523.25, 659.25, 783.99, 1046.5], 0.11, 0.45, 0.6), -8.0)
 	_upgrade = _player(_make_sweep(280.0, 1150.0, 0.45), -10.0)
 	_deny = _player(_make_tones([233.0, 196.0], 0.09, 0.14, 0.5), -12.0)
+	_pick = _player(_make_sweep(950.0, 380.0, 0.08), -13.0)
+	_pick.max_polyphony = 3
+	_dump = _player(_make_clatter(), -6.0)
 
 
 ## Putzgeräusch: Wedel rauscht nur, wenn er Staub erwischt.
@@ -50,6 +55,17 @@ func found_collectible() -> void:
 func coin() -> void:
 	_coin.pitch_scale = _rng.randf_range(0.94, 1.08)
 	_coin.play()
+
+
+## Kurzes "Plopp", wenn ein einzelnes Teil aufgehoben wird.
+func pick() -> void:
+	_pick.pitch_scale = _rng.randf_range(0.85, 1.2)
+	_pick.play()
+
+
+## Poltern, wenn der Sack in den Container geleert wird.
+func dump() -> void:
+	_dump.play()
 
 
 func jingle() -> void:
@@ -141,6 +157,24 @@ func _make_sweep(f_from: float, f_to: float, length: float) -> AudioStreamWAV:
 		phase += TAU * f / RATE
 		var env := sin(PI * k) * 0.5
 		samples[i] = (sin(phase) + 0.25 * sin(phase * 3.0)) * env
+	return _to_stream(samples)
+
+
+## Viele kurze, dumpfe Schläge hintereinander: Müll fällt in einen Container.
+func _make_clatter() -> AudioStreamWAV:
+	var n := int(RATE * 0.7)
+	var samples := PackedFloat32Array()
+	samples.resize(n)
+	for hit in 14:
+		var start := int(RATE * (0.02 + 0.5 * pow(_rng.randf(), 1.6)))
+		var freq := _rng.randf_range(90.0, 420.0)
+		var gain := _rng.randf_range(0.15, 0.4)
+		for k in int(RATE * 0.09):
+			if start + k >= n:
+				break
+			var t := float(k) / RATE
+			var env := exp(-t * 45.0)
+			samples[start + k] += gain * env * (sin(TAU * freq * t) * 0.6 + _rng.randf_range(-1.0, 1.0) * 0.4)
 	return _to_stream(samples)
 
 

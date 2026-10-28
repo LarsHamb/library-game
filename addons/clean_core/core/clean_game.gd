@@ -19,6 +19,8 @@ extends Node3D
 ## Zusatz-Schmutz mit eigenem Werkzeug (z.B. Spinnweben): add_mess_layer(). Karte (M): config.zone_bounds setzen.
 ## Schichten mit Gruppen (add_linked_flake(..., group)) geben config.group_bonus, wenn eine Gruppe sauber ist.
 ## Herumliegendes zum Zurückstellen: add_pickup().
+## Sack und Container: Grundwert "capacity" > 0 setzen und mit add_deposit() Abgabestellen anlegen.
+## Dann bringt, was die Figur selbst aufsammelt, erst Münzen, wenn der Sack dort geleert wird.
 
 var config: CleanGameConfig
 var state: CleanGameState
@@ -56,6 +58,9 @@ var _group_bonus_sum := 0
 var _group_count := 0
 var _group_timer := 0.0
 var _aimed_pickup: CleanPickup
+var _deposits: Array[Dictionary] = []   # {"pos": Vector3, "radius": float, "marker": Node3D}
+var _bag_full_cooldown := 0.0
+var _clearing := false
 
 
 # ================================================================ Für das konkrete Spiel
@@ -175,6 +180,8 @@ func _ready() -> void:
 	player.swept.connect(_on_swept)
 	player.tool_changed.connect(func(_t: CleanTool) -> void: _refresh_hud())
 	player.wrong_tool.connect(_on_wrong_tool)
+	player.bag_full.connect(_on_bag_full)
+	player.picked.connect(func(_p: Vector3) -> void: sfx.pick())
 
 	var loaded := _load_game()
 	for z in zones:
@@ -246,7 +253,9 @@ func _notification(what: int) -> void:
 
 
 func _process(delta: float) -> void:
-	sfx.set_cleaning(player.is_cleaning_held(), player.cleaning_mess, player.tool != null and player.tool.style == CleanTool.Style.SUCK)
+	var picking := player.tool != null and player.tool.style == CleanTool.Style.PICK
+	sfx.set_cleaning(player.is_cleaning_held() and not picking, player.cleaning_mess and not picking, player.tool != null and player.tool.style == CleanTool.Style.SUCK)
+	_update_bag(delta)
 	# Münz-Popups sammeln, damit nicht jedes Bild ein eigenes "+1" erscheint
 	_popup_timer -= delta
 	if _popup_coins > 0 and _popup_timer <= 0.0:
@@ -446,8 +455,13 @@ func _tour_shot(dir: String, file_name: String) -> void:
 func _on_flakes_removed(count: int, earned: int, zone: CleanZone) -> void:
 	_rate_buckets[RATE_WINDOW - 1] += count
 	earned = roundi(earned * state.stat("coin_mult") * zone.value_mult)
-	state.coins += earned
-	_popup_coins += earned
+	if bag_enabled() and player.collecting and not _clearing:
+		# Selbst Gesammeltes kommt in den Sack; Münzen gibt es erst am Container
+		state.carried += count
+		state.carried_coins += earned
+	else:
+		state.coins += earned
+		_popup_coins += earned
 	var percent := zone.progress_percent()
 	for m: int in config.milestones:
 		var key := "%s:%d" % [zone.id, m]
@@ -460,9 +474,11 @@ func _on_flakes_removed(count: int, earned: int, zone: CleanZone) -> void:
 	if not state.zones_done.has(zone.id) and percent >= config.complete_at:
 		state.zones_done.append(zone.id)
 		state.coins += zone.complete_bonus
+		_clearing = true   # der Rest fliegt davon und landet nicht im Sack
 		for m in zone.all_messes():
 			if m.required_tool == "":
 				m.clear_all()   # ruft diese Funktion erneut auf, zones_done verhindert eine Schleife
+		_clearing = false
 		hud.toast("%s ist blitzsauber! Der letzte Rest fliegt davon.\nBonus: +%d %s" % [zone.display_name, zone.complete_bonus, config.currency_name], 6.0)
 		sfx.jingle()
 	_refresh_hud()
@@ -950,3 +966,81 @@ func add_ladder(foot_center: Vector3, facing: Vector3, height: float, max_feet: 
 	var ladder := CleanLadder.create(foot_center, facing, Vector3(0.8, height + 1.0, 0.7), max_feet)
 	add_child(ladder)
 	return ladder
+
+
+# ================================================================ Sack und Container
+
+func bag_enabled() -> bool:
+	return state.stat("capacity") > 0.0
+
+
+func bag_capacity() -> int:
+	return roundi(state.stat("capacity"))
+
+
+## Abgabestelle für den Sack: wer näher als radius herankommt, leert ihn automatisch.
+## Darüber schwebt ein Hinweis, der hüpft, sobald der Sack voll ist.
+func add_deposit(pos: Vector3, radius := 2.6, marker_height := 2.2) -> void:
+	var marker := Label3D.new()
+	marker.text = "▼\n%s" % config.deposit_name
+	marker.position = pos + Vector3(0, marker_height, 0)
+	marker.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	marker.font_size = 72
+	marker.pixel_size = 0.004
+	marker.outline_size = 14
+	marker.no_depth_test = true
+	marker.render_priority = 10
+	marker.modulate = config.ui_accent_color.lightened(0.3)
+	marker.outline_modulate = config.ui_outline_color
+	marker.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+	if config.ui_title_font != "" and ResourceLoader.exists(config.ui_title_font):
+		marker.font = load(config.ui_title_font)
+	add_child(marker)
+	_deposits.append({"pos": pos, "radius": radius, "marker": marker, "height": marker_height})
+
+
+func _update_bag(delta: float) -> void:
+	_bag_full_cooldown = maxf(0.0, _bag_full_cooldown - delta)
+	if not bag_enabled():
+		player.can_collect = true
+		hud.set_carry("", 0, 0)
+		return
+	var capacity := bag_capacity()
+	var full := state.carried >= capacity
+	player.can_collect = not full
+	hud.set_carry(config.carry_name, state.carried, capacity)
+	var t := Time.get_ticks_msec() * 0.001
+	for d in _deposits:
+		var marker: Label3D = d["marker"]
+		var base: Vector3 = d["pos"]
+		# Voller Sack: Hinweise hüpfen und leuchten, damit man den Weg findet
+		var bounce := absf(sin(t * 5.0)) * 0.35 if full else sin(t * 1.6) * 0.06
+		marker.position = base + Vector3(0, float(d["height"]) + bounce, 0)
+		marker.modulate = Color(1.0, 0.45, 0.3) if full else config.ui_accent_color.lightened(0.3)
+		marker.text = "▼\n%s leeren!" % config.carry_name if full else "▼\n%s" % config.deposit_name
+		if state.carried > 0:
+			var flat := Vector2(player.global_position.x - base.x, player.global_position.z - base.z)
+			if flat.length() < float(d["radius"]):
+				_empty_bag()
+
+
+func _empty_bag() -> void:
+	var earned := state.carried_coins
+	var count := state.carried
+	state.coins += earned
+	state.carried = 0
+	state.carried_coins = 0
+	sfx.dump()
+	if earned > 0:
+		hud.coin_popup(earned)
+		sfx.coin()
+	hud.toast("%s geleert: %d %s · +%d %s" % [config.carry_name, count, config.flake_name, earned, config.currency_name], 2.5)
+	_refresh_hud()
+
+
+func _on_bag_full() -> void:
+	if _bag_full_cooldown > 0.0:
+		return
+	_bag_full_cooldown = 3.5
+	sfx.deny()
+	hud.toast("Dein %s ist voll!\nBring ihn zu einem %s – die Pfeile zeigen, wo." % [config.carry_name, config.deposit_name], 3.0)

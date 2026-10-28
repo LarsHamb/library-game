@@ -1,13 +1,13 @@
 // Sandboden: Farbe aus Rauschen, feine Körnung, vom Wind gezeichnete Rippeln,
 // dunkler, glatter Nasssand am Spülsaum. Das Gelände wird im Shader verformt (ground.gdshaderinc).
 shader_type spatial;
-render_mode diffuse_burley;
+render_mode diffuse_toon, specular_toon;
 
 #include "res://addons/clean_core/shaders/noise.gdshaderinc"
 #include "res://game/beach/shaders/ground.gdshaderinc"
 
-uniform vec3 sand_dry : source_color = vec3(0.86, 0.74, 0.56);
-uniform vec3 sand_light : source_color = vec3(0.96, 0.88, 0.71);
+uniform vec3 sand_dry : source_color = vec3(0.95, 0.8, 0.55);
+uniform vec3 sand_light : source_color = vec3(0.99, 0.88, 0.64);
 uniform vec3 sand_wet : source_color = vec3(0.6, 0.5, 0.37);
 uniform float water_level = -0.12;
 
@@ -34,8 +34,9 @@ void fragment() {
 	float big = cc_fbm(p * 0.07);
 	float mid = cc_fbm(p * 0.55 + 3.0);
 	float grain = cc_noise(p * 95.0);
-	vec3 col = mix(sand_dry, sand_light, smoothstep(0.25, 0.75, big));
-	col *= (0.93 + 0.12 * mid) * (0.94 + 0.09 * grain);
+	// Comic: wenige, flächige Farbstufen statt feiner Körnung
+	vec3 col = mix(sand_dry, sand_light, step(0.5, big + 0.15 * mid));
+	col *= 0.98 + 0.03 * grain;
 	// kleine dunkle Körner und helle Muschelsplitter
 	float speck = cc_noise(p * 48.0 + 7.0);
 	col = mix(col, vec3(0.42, 0.36, 0.3), step(0.955, speck) * 0.55);
@@ -53,7 +54,7 @@ void fragment() {
 	// Rippeln: auf den Dünen größer, im Nassen glattgespült
 	float dune = 1.0 - smoothstep(DUNE_Z - 4.0, DUNE_Z, wp.z);
 	float scale = mix(1.0, 0.45, dune);
-	float amp = mix(0.018, 0.06, dune) * (1.0 - wet * 0.9) * smoothstep(0.25, 0.75, mid + 0.2 * big);
+	float amp = mix(0.006, 0.03, dune) * (1.0 - wet * 0.9) * smoothstep(0.25, 0.75, mid + 0.2 * big);
 	float e = 0.02;
 	float dx = (ripple(p + vec2(e, 0.0), scale) - ripple(p - vec2(e, 0.0), scale)) / (2.0 * e);
 	float dz = (ripple(p + vec2(0.0, e), scale) - ripple(p - vec2(0.0, e), scale)) / (2.0 * e);
@@ -61,7 +62,7 @@ void fragment() {
 	NORMAL = normalize((VIEW_MATRIX * vec4(n, 0.0)).xyz);
 
 	// Rippel-Täler etwas dunkler
-	col *= 0.98 + 0.025 * ripple(p, scale) * (1.0 - wet);
+	col *= 1.0 - 0.035 * step(0.6, ripple(p, scale)) * (1.0 - wet) * smoothstep(0.3, 0.7, mid);
 	ALBEDO = col;
 	ROUGHNESS = mix(0.95, 0.3, wet * wet);
 	SPECULAR = mix(0.25, 0.55, wet * wet);

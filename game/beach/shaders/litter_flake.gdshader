@@ -2,7 +2,7 @@
 // Schnurreste und Styroporkrümel. Jede Instanz bekommt per Zufall eine Form und Farbe.
 // Die Instanzfarbe (COLOR) kommt vom Kern: weiß = normal, gelb = Müll-Radar.
 shader_type spatial;
-render_mode cull_disabled, diffuse_burley;
+render_mode cull_disabled, diffuse_toon, specular_toon;
 
 #include "res://addons/clean_core/shaders/noise.gdshaderinc"
 

@@ -1,7 +1,7 @@
 // Geisternetz: verheddertes Fischernetz mit Rautenmuster und ausgefranstem Rand.
 // Instanzfarbe vom Kern: Grundfarbe, Deckkraft (wird beim Schneiden dünner) und Radar-Gelb.
 shader_type spatial;
-render_mode cull_disabled, diffuse_burley;
+render_mode cull_disabled, diffuse_toon, specular_toon;
 
 #include "res://addons/clean_core/shaders/noise.gdshaderinc"
 

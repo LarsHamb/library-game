@@ -1,5 +1,6 @@
 // Felsen: Kugeln werden mit Rauschen zu Brocken verformt. Grau-braun, unten nass und mit Algen und Seepocken.
 shader_type spatial;
+render_mode diffuse_toon, specular_toon;
 
 #include "res://addons/clean_core/shaders/noise.gdshaderinc"
 

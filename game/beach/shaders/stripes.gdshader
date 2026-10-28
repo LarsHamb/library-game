@@ -1,7 +1,7 @@
 // Stoff mit Streifen (Strandkörbe, Sonnenschirme, Rettungsturm, Leuchtturm).
 // radial = false: waagrechte Streifen entlang der lokalen y-Achse; true: Streifen rund um die y-Achse (Schirm).
 shader_type spatial;
-render_mode diffuse_burley, cull_disabled;
+render_mode diffuse_toon, specular_toon, cull_disabled;
 
 #include "res://addons/clean_core/shaders/noise.gdshaderinc"
 

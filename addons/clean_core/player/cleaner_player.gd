@@ -8,6 +8,8 @@ extends CharacterBody3D
 signal swept(point: Vector3, radius: float)   # jedes Bild, in dem geputzt wird (für Sammelobjekte)
 signal tool_changed(tool: CleanTool)
 signal wrong_tool(field: CleanMessField)       # man putzt an Schmutz, für den ein anderes Werkzeug nötig ist
+signal bag_full                                # man will etwas aufheben, aber can_collect ist aus
+signal picked(point: Vector3)                  # ein einzelnes Teil wurde aufgehoben (Werkzeug-Stil PICK)
 
 const WALK_SPEED := 4.0
 const SPRINT_SPEED := 7.0
@@ -15,6 +17,7 @@ const CLIMB_SPEED := 2.2
 const JUMP_VELOCITY := 4.2
 const EYE_HEIGHT := 1.65
 const TOOL_POS := Vector3(0.32, -0.3, -0.5)
+const PICK_EFFORT := 1.8    # Sekunden × Kraft pro aufgehobenem Teil (Kraft 6 = alle 0,3 s ein Teil)
 
 var mess_fields: Array[CleanMessField] = []   # alles, was die Figur putzen kann (offene Zonen)
 var mouse_sensitivity := 0.0025
@@ -24,6 +27,8 @@ var clean_power := 6.0      # Schmutzmenge pro Sekunde in der Ringmitte
 var reach := 3.2
 var speed_mult := 1.0
 var cleaning_mess := false  # wird gerade wirklich Schmutz erwischt? (für Geräusch)
+var can_collect := true     # false = Sack voll: nichts geht mehr weg, bis er geleert ist
+var collecting := false     # true, solange die Figur selbst Schmutz entfernt (für flakes_removed)
 
 var _tools: Array[CleanTool] = []
 var _unlocked := {}         # Werkzeug-ID -> true
@@ -43,6 +48,8 @@ var _swing_time := 0.0
 var _bob_time := 0.0
 var _puff_timer := 0.0
 var _ladders: Array[CleanLadder] = []   # Leitern, an denen man gerade steht
+var _pick_timer := 0.0
+var _grab_time := 1.0       # Zeit seit dem letzten Zugreifen (Animation)
 
 
 func _ready() -> void:
@@ -255,7 +262,14 @@ func _process(delta: float) -> void:
 func _animate_tool(delta: float) -> void:
 	var visual: Node3D = _visuals[tool.id]
 	var rest: Vector3 = _rest[tool.id]
-	if _cleaning and tool.style == CleanTool.Style.SUCK:
+	if tool.style == CleanTool.Style.PICK:
+		# Greifen: kurz nach vorne stoßen und zurück
+		_grab_time += delta
+		var k := clampf(_grab_time / 0.22, 0.0, 1.0)
+		var jab := sin(k * PI)
+		visual.position = TOOL_POS + Vector3(0.0, -0.05, -0.16) * jab
+		visual.rotation = rest + Vector3(-0.35 * jab, 0.0, 0.0)
+	elif _cleaning and tool.style == CleanTool.Style.SUCK:
 		# Sauger brummt: kleines Zittern statt Schwingen
 		visual.position = TOOL_POS + Vector3(randf_range(-1, 1), randf_range(-1, 1), 0) * 0.004
 	elif _cleaning:
@@ -285,13 +299,26 @@ func _update_cleaning(delta: float) -> void:
 	if _cleaning:
 		swept.emit(point, clean_radius)
 	var touched := 0
-	if _cleaning:
+	_pick_timer -= delta
+	if _cleaning and tool.style == CleanTool.Style.PICK:
+		if _pick_timer <= 0.0:
+			touched = _pick(point)
+	elif _cleaning:
+		var usable: Array[CleanMessField] = []
 		for field in mess_fields:
 			if field.required_tool != "" and field.required_tool != tool.id:
 				if field.count_at(point, clean_radius) > 0:
 					wrong_tool.emit(field)
 				continue
-			touched += field.clean_at(point, clean_radius, clean_power * delta)
+			usable.append(field)
+		if not can_collect:
+			if usable.any(func(f: CleanMessField) -> bool: return f.count_at(point, clean_radius) > 0):
+				bag_full.emit()
+		else:
+			collecting = true
+			for field in usable:
+				touched += field.clean_at(point, clean_radius, clean_power * delta)
+			collecting = false
 	if touched > 0:
 		cleaning_mess = true
 		_puff.global_position = point
@@ -305,6 +332,36 @@ func _update_cleaning(delta: float) -> void:
 			_puff.direction = Vector3.UP
 			_puff.gravity = Vector3(0, -0.4, 0)
 	_puff.emitting = _puff_timer > 0.0
+
+
+## Hebt das Teil auf, das dem Zielpunkt am nächsten liegt. Gibt 1 zurück, wenn etwas aufgehoben wurde.
+func _pick(point: Vector3) -> int:
+	var best_field: CleanMessField
+	var best := -1
+	var best_d := INF
+	for field in mess_fields:
+		if field.required_tool != "" and field.required_tool != tool.id:
+			if field.count_at(point, clean_radius) > 0:
+				wrong_tool.emit(field)
+			continue
+		var i := field.nearest_at(point, clean_radius)
+		if i >= 0 and field.flake_position(i).distance_squared_to(point) < best_d:
+			best_d = field.flake_position(i).distance_squared_to(point)
+			best = i
+			best_field = field
+	if best < 0:
+		return 0
+	if not can_collect:
+		bag_full.emit()
+		return 0
+	var where := best_field.flake_position(best)
+	collecting = true
+	best_field.pick(best)
+	collecting = false
+	_pick_timer = maxf(0.08, PICK_EFFORT / maxf(clean_power, 0.1))
+	_grab_time = 0.0
+	picked.emit(where)
+	return 1
 
 
 static func _basis_from_normal(n: Vector3) -> Basis:

@@ -15,6 +15,7 @@ const FOLIAGE := preload("res://game/beach/shaders/foliage.gdshader")
 const LITTER_FLAKE := preload("res://game/beach/shaders/litter_flake.gdshader")
 const LITTER_ITEM := preload("res://game/beach/shaders/litter_item.gdshader")
 const NET := preload("res://game/beach/shaders/net.gdshader")
+const OUTLINE := preload("res://game/beach/shaders/outline.gdshader")
 const SEA_SOUND := "res://game/beach/audio/meer.ogg"
 
 # --- Gelände (gleiche Werte wie in shaders/ground.gdshaderinc) ---
@@ -29,6 +30,9 @@ const EAST_END := 52.0
 const DIVIDER_X := 22.0     # Felsriegel zwischen den Abschnitten (bei −22 und +22)
 const GAP_Z := Vector2(-1.0, 3.0)   # Durchgang im Felsriegel
 const BELT_Z := 5.8
+const MAIN_CONTAINERS := [Vector3(-19.9, 0.0, -1.5), Vector3(19.9, 0.0, -1.5)]
+const ROCKS_CONTAINER := Vector3(-30.0, 0.0, -13.6)
+const WRECK_CONTAINER := Vector3(26.0, 0.0, -13.6)
 
 const GRABBER_NAMES := [
 	"Greifzange", "Lange Greifzange", "Breite Greifzange", "Doppelgreifer", "Profi-Greifer",
@@ -238,6 +242,14 @@ func _process(delta: float) -> void:
 		b.position.y = sin(t * 0.6 + i * 2.0) * 0.15
 
 
+## Die Comic-Umrisse lesen den Tiefenpuffer, der mit MSAA leer bleibt: hier glättet stattdessen FXAA.
+func apply_quality(level: int) -> void:
+	super(level)
+	var vp := get_viewport()
+	vp.msaa_3d = Viewport.MSAA_DISABLED
+	vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA
+
+
 func _start_sea_sound() -> void:
 	if not ResourceLoader.exists(SEA_SOUND):
 		return
@@ -297,8 +309,8 @@ func _build_environment() -> void:
 	env.volumetric_fog_anisotropy = 0.6
 	env.volumetric_fog_length = 80.0
 	env.adjustment_enabled = true
-	env.adjustment_contrast = 1.05
-	env.adjustment_saturation = 1.12
+	env.adjustment_contrast = 1.08
+	env.adjustment_saturation = 1.28
 	var world_env := WorldEnvironment.new()
 	world_env.environment = env
 	add_child(world_env)
@@ -311,9 +323,22 @@ func _build_environment() -> void:
 	sun.shadow_enabled = true
 	sun.directional_shadow_max_distance = 70.0
 	sun.directional_shadow_blend_splits = true
-	sun.shadow_blur = 1.5
+	sun.shadow_blur = 0.4
 	add_child(sun)
 	sun.look_at_from_position(Vector3.ZERO, Vector3(-0.72, -0.52, -0.46), Vector3.UP)
+
+	# Comic-Umrisse: bildschirmfüllendes Rechteck mit Kantenerkennung, wird als Letztes gezeichnet
+	var quad := QuadMesh.new()
+	quad.size = Vector2(2, 2)
+	var outline := ShaderMaterial.new()
+	outline.shader = OUTLINE
+	outline.render_priority = 127
+	quad.material = outline
+	var outline_node := MeshInstance3D.new()
+	outline_node.mesh = quad
+	outline_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	outline_node.custom_aabb = AABB(Vector3(-1e5, -1e5, -1e5), Vector3(2e5, 2e5, 2e5))
+	add_child(outline_node)
 
 
 func _build_ground() -> void:
@@ -376,9 +401,14 @@ func _build_main_props() -> void:
 	# Rettungsturm
 	_build_lifeguard_tower(Vector3(11.0, 0.0, -11.5))
 	ex.append(Rect2(9.6, -12.9, 2.8, 2.8))
-	# Wertstoffstation
+	# Wertstoffstation: hier leert man auch den Müllsack
 	_build_recycling(Vector3(4.5, 0.0, -14.4))
 	ex.append(Rect2(2.6, -15.4, 4.0, 1.8))
+	add_deposit(Vector3(4.5, 0.0, -14.4), 3.0, 2.0)
+	# Müllcontainer an beiden Enden der Bucht
+	for spot: Vector3 in MAIN_CONTAINERS:
+		_build_container(spot, -PI * 0.5 * signf(spot.x), Color(0.16, 0.5, 0.3))
+		ex.append(Rect2(spot.x - 1.3, spot.z - 1.6, 2.6, 3.2))
 	# Strandkörbe in zwei lockeren Reihen
 	var colors := [Color(0.12, 0.33, 0.7), Color(0.8, 0.15, 0.15), Color(0.1, 0.55, 0.45), Color(0.95, 0.65, 0.1), Color(0.12, 0.33, 0.7), Color(0.8, 0.15, 0.15)]
 	var i := 0
@@ -508,6 +538,66 @@ func _build_recycling(base: Vector3) -> void:
 		var lid := box(Vector3(1.04, 0.07, 0.94), p + Vector3(0, 1.13, -0.05), _std("bin_lid_%d" % i, color.darkened(0.3), 0.5), false)
 		lid.rotation.x = -0.08
 		box(Vector3(0.4, 0.4, 0.02), p + Vector3(0, 0.65, 0.46), _std("bin_label", Color(0.96, 0.96, 0.94), 0.6), false)
+
+
+## Großer Müllcontainer auf Rädern mit halb offenem Deckel. Wer nah herangeht, leert dort den Müllsack.
+func _build_container(base: Vector3, yaw: float, color: Color) -> void:
+	var root := Node3D.new()
+	root.position = base + Vector3(0, ground_height(base.x, base.z), 0)
+	root.rotation.y = yaw
+	add_child(root)
+	var body := _std("container_%s" % color.to_html(false), color, 0.55, 0.2)
+	var dark := _std("container_dark_%s" % color.to_html(false), color.darkened(0.35), 0.6, 0.2)
+	var rubber := _std("rubber", Color(0.1, 0.1, 0.11), 0.9)
+	# Wanne, unten etwas schmaler
+	var tub := MeshInstance3D.new()
+	var tub_mesh := CylinderMesh.new()
+	tub_mesh.radial_segments = 4
+	tub_mesh.top_radius = 1.25
+	tub_mesh.bottom_radius = 1.05
+	tub_mesh.height = 1.25
+	tub_mesh.material = body
+	tub.mesh = tub_mesh
+	tub.rotation.y = PI * 0.25
+	var squash := Node3D.new()   # erst drehen, dann flach drücken: so wird aus dem Kegel eine rechteckige Wanne
+	squash.position = Vector3(0, 0.82, 0)
+	squash.scale = Vector3(1.0, 1.0, 0.64)
+	squash.add_child(tub)
+	root.add_child(squash)
+	# Rand oben, Schiebegriff hinten, Räder
+	_mesh(root, _box_mesh(Vector3(1.86, 0.1, 1.2), dark), Vector3(0, 1.47, 0))
+	_mesh(root, _box_mesh(Vector3(1.5, 0.07, 0.07), dark), Vector3(0, 1.3, -0.68))
+	for x: float in [-0.65, 0.65]:
+		for z: float in [-0.4, 0.4]:
+			var wheel := _mesh(root, _cyl(0.1, 0.1, 0.08), Vector3(x, 0.1, z))
+			wheel.material_override = rubber
+			wheel.rotation.x = PI * 0.5
+	# Deckel: einer zu, einer aufgeklappt
+	var lid_a := _mesh(root, _box_mesh(Vector3(0.92, 0.06, 1.2), dark), Vector3(-0.46, 1.55, 0))
+	lid_a.rotation.z = 0.05
+	var hinge := Node3D.new()
+	hinge.position = Vector3(0.0, 1.53, -0.6)
+	hinge.rotation.x = -1.75
+	root.add_child(hinge)
+	_mesh(hinge, _box_mesh(Vector3(0.92, 0.06, 1.2), dark), Vector3(0.46, 0, 0.6))
+	# Etwas Müll schaut oben raus
+	var bag := _mesh(root, _sphere(0.32, 0.5), Vector3(0.45, 1.5, 0.05))
+	bag.material_override = _std("trash_bag", Color(0.12, 0.12, 0.14), 0.4)
+	bag.scale = Vector3(1.0, 0.7, 1.0)
+	# Schild vorne
+	_mesh(root, _box_mesh(Vector3(0.9, 0.42, 0.02), _std("container_sign", Color(0.97, 0.96, 0.92), 0.6)), Vector3(0, 0.95, 0.555))
+	var label := Label3D.new()
+	label.text = "MÜLL"
+	label.font_size = 64
+	label.pixel_size = 0.0045
+	label.modulate = color.darkened(0.45)
+	label.outline_size = 0
+	label.position = Vector3(0, 0.95, 0.57)
+	if ResourceLoader.exists(config.ui_title_font):
+		label.font = load(config.ui_title_font)
+	root.add_child(label)
+	add_collider(Vector3(2.0, 1.6, 1.3).rotated(Vector3.UP, yaw).abs(), root.position + Vector3(0, 0.8, 0))
+	add_deposit(base, 2.8, 2.3)
 
 
 func _build_strandkorb(base: Vector3, yaw: float, color: Color) -> void:
@@ -657,6 +747,8 @@ func _build_rocks_zone(zone: CleanZone) -> void:
 		tries += 1
 		var x := r.randf_range(WEST_END + 1.0, -DIVIDER_X - 2.5)
 		var z := r.randf_range(BACK_Z + 0.5, 9.0)
+		if Vector2(x, z).distance_to(Vector2(ROCKS_CONTAINER.x, ROCKS_CONTAINER.z)) < 3.6:
+			continue   # Platz für den Container
 		if absf(z - BELT_Z) < 1.6 or (z > -7.0 and z < 7.0 and absf(fmod(z + 7.5, 3.0) - 1.5) > 0.7):
 			continue   # Förderband und Bahnen der Siebmaschinen
 		var s := r.randf_range(0.5, 1.5) if z > -9.0 else r.randf_range(1.0, 2.2)
@@ -666,6 +758,8 @@ func _build_rocks_zone(zone: CleanZone) -> void:
 		if s > 1.1:
 			_net_spots.append([zone, Vector3(x + size.x * 0.9, 0.04, z + r.randf_range(-0.4, 0.4))])
 		placed += 1
+	_build_container(ROCKS_CONTAINER, 0.0, Color(0.85, 0.45, 0.12))
+	ex.append(Rect2(ROCKS_CONTAINER.x - 1.6, ROCKS_CONTAINER.z - 1.2, 3.2, 2.4))
 	# Gezeitentümpel
 	for spot: Vector3 in [Vector3(-44.0, 0, 6.5), Vector3(-36.5, 0, -10.0)]:
 		var pool := MeshInstance3D.new()
@@ -745,6 +839,8 @@ func _build_wreck_zone(zone: CleanZone) -> void:
 	var ex: Array[Rect2] = _excludes["wreck"]
 	var r := RandomNumberGenerator.new()
 	r.seed = 91
+	_build_container(WRECK_CONTAINER, 0.0, Color(0.15, 0.38, 0.75))
+	ex.append(Rect2(WRECK_CONTAINER.x - 1.6, WRECK_CONTAINER.z - 1.2, 3.2, 2.4))
 	var center := Vector3(38.0, 0.0, -11.0)
 	var yaw := 0.35
 	var root := Node3D.new()
@@ -1131,7 +1227,7 @@ func _build_gulls() -> void:
 
 func _plan_machines() -> void:
 	for z in [-7.5, -6.0, -4.5, -3.0, -1.5, 0.0, 1.5, 3.0, 4.5]:
-		_lanes.append({"from": Vector3(-20.0, 0, z), "to": Vector3(20.0, 0, z), "zone": "main"})
+		_lanes.append({"from": Vector3(-18.0, 0, z), "to": Vector3(18.0, 0, z), "zone": "main"})
 	for z in [-5.5, -2.5, 0.5, 3.5]:
 		_lanes.append({"from": Vector3(-47.5, 0, z), "to": Vector3(-25.0, 0, z), "zone": "rocks"})
 	for z in [-4.5, -1.5, 1.5, 4.0]:
@@ -1764,6 +1860,9 @@ func _stripes(key: String, a: Color, b: Color, count: float) -> ShaderMaterial:
 func _std(key: String, color: Color, roughness := 0.7, metallic := 0.0) -> StandardMaterial3D:
 	var m := mat("beach_" + key, color, roughness)
 	m.metallic = metallic
+	# Comic-Look: harte Licht- und Schattenkante
+	m.diffuse_mode = BaseMaterial3D.DIFFUSE_TOON
+	m.specular_mode = BaseMaterial3D.SPECULAR_TOON
 	return m
 
 

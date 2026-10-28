@@ -1,6 +1,6 @@
 // Strandhafer und Palmwedel: Blattform per Alpha, wiegt sich im Wind (je höher, desto mehr).
 shader_type spatial;
-render_mode cull_disabled, diffuse_lambert_wrap;
+render_mode cull_disabled, diffuse_toon;
 
 #include "res://addons/clean_core/shaders/noise.gdshaderinc"
 

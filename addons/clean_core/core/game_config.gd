@@ -18,6 +18,9 @@ extends Resource
 @export var zone_word := "Saal"               # wie ein Bereich heißt ("Saal", "Bucht" ...), z.B. auf der Karte
 @export var bot_word := "Roboter"             # Sammelbegriff für alles, was selbst putzt
 @export var zone_unlocked_text := "Die Tür ist offen: %s!"   # %s = Name des Upgrades
+@export var carry_name := "Sack"              # Behälter, in dem man Gesammeltes trägt (nur mit Grundwert "capacity")
+@export var deposit_name := "Container"       # wo man ihn leert
+@export var help_text := ""                   # Steuerungshilfe unten links; leer = Standardtext
 
 @export_group("Aussehen")
 @export_file("*.ttf", "*.otf") var ui_title_font := ""   # Überschriften, Münzen
@@ -40,6 +43,7 @@ extends Resource
 	"radar_cooldown": 20.0,  # Sekunden
 	"bot_speed": 1.0,        # Faktor auf das Tempo aller Roboter
 	"bot_power": 1.0,        # Faktor auf die Putzkraft aller Roboter
+	"capacity": 0.0,         # > 0: Gesammeltes landet erst im Sack und bringt Münzen, wenn man ihn leert (add_deposit)
 }
 @export var radar_duration := 6.0
 @export var milestones := {25: 500, 50: 1000, 75: 2000}   # Prozent -> Bonus

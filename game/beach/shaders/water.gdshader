@@ -1,15 +1,15 @@
 // Meer: Wellen im Vertex-Shader, Farbe nach Wassertiefe (türkis im Flachen, tiefblau draußen),
 // Lichtbrechung über den Bildschirminhalt (Tiefe aus der Geländeformel), Schaumsaum am Strand und Schaumkronen.
 shader_type spatial;
-render_mode blend_mix, depth_draw_always, cull_back, diffuse_burley, specular_schlick_ggx;
+render_mode blend_mix, depth_draw_always, cull_back, diffuse_toon, specular_toon;
 
 #include "res://addons/clean_core/shaders/noise.gdshaderinc"
 #include "res://game/beach/shaders/ground.gdshaderinc"
 
 uniform sampler2D screen_tex : hint_screen_texture, filter_linear_mipmap;
-uniform vec3 shallow : source_color = vec3(0.3, 0.8, 0.74);
-uniform vec3 mid_color : source_color = vec3(0.07, 0.5, 0.6);
-uniform vec3 deep : source_color = vec3(0.02, 0.2, 0.36);
+uniform vec3 shallow : source_color = vec3(0.25, 0.85, 0.8);
+uniform vec3 mid_color : source_color = vec3(0.05, 0.6, 0.72);
+uniform vec3 deep : source_color = vec3(0.02, 0.32, 0.6);
 uniform vec3 foam_color : source_color = vec3(0.96, 0.98, 0.98);
 uniform float shore_z = 9.0;
 
@@ -63,8 +63,9 @@ void fragment() {
 	vec3 view_dir = normalize((INV_VIEW_MATRIX * vec4(VERTEX, 0.0)).xyz);
 	float dist_behind = column / max(-view_dir.y, 0.08);
 
-	vec3 water = mix(shallow, mid_color, smoothstep(0.0, 1.2, column));
-	water = mix(water, deep, smoothstep(1.0, 4.5, column));
+	// Comic: klare Farbstufen statt weichem Verlauf
+	vec3 water = mix(shallow, mid_color, step(0.45, column));
+	water = mix(water, deep, step(2.2, column + 0.6 * (cc_fbm(p * 0.05) - 0.5)));
 	// Lichtbrechung: der Grund schimmert durch, verzerrt durch die Wellen
 	vec2 refr_uv = SCREEN_UV + wn.xz * 0.025 * clamp(column, 0.0, 1.0);
 	vec3 below = textureLod(screen_tex, refr_uv, 1.0).rgb;
@@ -74,15 +75,17 @@ void fragment() {
 	// Schaum: am Strand, wo das Wasser flach wird, und auf den Wellenkämmen
 	float n1 = cc_fbm(p * 2.2 + vec2(t * 0.15, -t * 0.3));
 	float n2 = cc_noise(p * 9.0 - vec2(0.0, t * 0.8));
-	float shore_foam = 1.0 - smoothstep(0.0, 0.08 + 0.18 * n1, column);
-	float lines = smoothstep(0.55, 0.9, sin(column * 18.0 - t * 2.2 + n1 * 4.0) * 0.5 + 0.5) * (1.0 - smoothstep(0.05, 0.45, column));
-	float crest_foam = smoothstep(0.12, 0.22, crest + n1 * 0.08) * smoothstep(0.45, 0.8, n2 + n1 * 0.4);
-	float foam = clamp(max(shore_foam * smoothstep(0.3, 0.6, n2 + 0.3), lines * 0.8) + crest_foam * 0.7, 0.0, 1.0);
+	float shore_foam = 1.0 - step(0.06 + 0.12 * n1, column);
+	float lines = step(0.82, sin(column * 14.0 - t * 2.2 + n1 * 4.0) * 0.5 + 0.5) * (1.0 - step(0.4, column));
+	float crest_foam = step(0.18, crest + n1 * 0.08) * step(0.62, n2 + n1 * 0.4);
+	// glitzernde Sonnenflecken als kleine weiße Striche
+	float glint = step(0.93, cc_noise(p * vec2(1.5, 6.0) + vec2(t * 0.3, -t * 0.6))) * step(0.5, column);
+	float foam = clamp(max(max(shore_foam, lines), max(crest_foam, glint * 0.8)), 0.0, 1.0);
 
 	float opacity = 1.0 - clarity;
 	ALBEDO = mix(water * opacity, foam_color, foam);
 	EMISSION = below * tint * clarity * (1.0 - foam) * 0.9;
-	ROUGHNESS = mix(0.04, 0.8, foam);
+	ROUGHNESS = mix(0.15, 0.9, foam);
 	SPECULAR = 0.55;
 	// weicher Übergang am Ufer, damit keine harte Kante entsteht
 	ALPHA = clamp(column * 25.0, 0.0, 1.0);

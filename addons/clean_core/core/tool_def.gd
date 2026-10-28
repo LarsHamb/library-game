@@ -3,7 +3,9 @@ extends Resource
 ## Ein Putzwerkzeug. Die Werte sind Faktoren auf die Grundwerte des Spielers
 ## (radius, power, reach), damit Upgrades automatisch für alle Werkzeuge gelten.
 
-enum Style { SWEEP, SUCK }   # SWEEP: Staub wirbelt hoch, Werkzeug schwingt. SUCK: Staub fliegt zur Düse, Werkzeug brummt.
+## SWEEP: Staub wirbelt hoch, Werkzeug schwingt. SUCK: Staub fliegt zur Düse, Werkzeug brummt.
+## PICK: hebt Teil für Teil auf (das nächste im Ring), Taste halten = eins nach dem anderen.
+enum Style { SWEEP, SUCK, PICK }
 
 @export var id := ""
 @export var display_name := ""

@@ -10,11 +10,12 @@ Das Repo enthält außerdem das erste Spiel mit demselben Kern, **Bibliothek ent
 
 - Drei Strandabschnitte: die **Möwenbucht**, die **Felsenbucht** (Geisternetze und Gezeitentümpel, 1,6× Münzen) und die **Wrackküste** mit altem Schiffswrack (2,5× Münzen). Die Durchgänge im Felsriegel öffnet man im Upgrade-Laden
 - **Müll**: über 10.000 Teile Kleinmüll (Kronkorken, Kippen, Plastiksplitter, Strohhalme …), dazu große Teile als 3D-Modelle (Flaschen, Dosen, Tüten, Flipflops, Bojen, Reifen …), oft in **Müllhaufen** mit Bonus, wenn ein Haufen ganz weg ist. Am Spülsaum liegt am meisten
+- **Müllsack und Container**: Mit der Greifzange hebt man jedes Teil einzeln auf (klicken oder Taste halten). Es landet im Müllsack (Anzeige oben rechts); Münzen gibt es erst, wenn man den Sack an einem Container oder der Wertstoffstation leert – einfach hinlaufen. Der Sack lässt sich im Laden vergrößern. Maschinen bringen ihren Müll selbst weg
 - **Werkzeuge**: Greifzange (Start), Strandrechen, Müllsauger und Netzschneider. Geisternetze an Buhnen, Felsen und Wrack gehen nur mit dem Netzschneider weg
 - **Maschinen**: Siebmaschinen fahren Bahnen ab und sieben den Sand, Sammeldrohnen suchen selbst Müll, Förderbänder am Spülsaum fangen ab, was die Wellen anspülen. Sobald Maschinen laufen, spült die Flut immer wieder etwas an. Auch während das Spiel aus ist, sammeln sie weiter (bis zu 8 Stunden)
 - **8 Schätze** unter Müllhaufen (Flaschenpost, Goldene Dublone, Kompass …), jeder mit dauerhaftem Bonus
 - **44 Muscheln** zum Anklicken: sie fliegen in die Muschelsammlung am Strandkiosk
-- **Grafik**: Meer mit Wellen, Brandung und Schaum, nasser Sand am Spülsaum, Sandrippeln, Himmel mit Wolken, Dünen mit Strandhafer, Palmen, Strandkörbe, Rettungsturm, Leuchtturm, Segelboote und Möwen. Alles prozedural, ohne Texturdateien
+- **Grafik im Comic-Stil**: dunkle Umrisslinien, Toon-Licht mit harten Schattenkanten, kräftige Farben. Meer mit Wellen, Brandung und Schaum, nasser Sand am Spülsaum, Sandrippeln, Himmel mit Wolken, Dünen mit Strandhafer, Palmen, Strandkörbe, Rettungsturm, Leuchtturm, Segelboote und Möwen. Alles prozedural, ohne Texturdateien
 - Musik und Meeresrauschen (per Skript erzeugt), Karte (M), Müll-Radar (R), Speichern wie gehabt
 
 ## Bibliothek entstauben

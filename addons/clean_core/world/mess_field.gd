@@ -148,6 +148,44 @@ func clean_at(point: Vector3, radius: float, amount: float) -> int:
 	return touched
 
 
+## Die Flocke, die dem Punkt im Umkreis am nächsten liegt (für Werkzeuge, die Teil für Teil aufheben), oder -1.
+func nearest_at(point: Vector3, radius: float) -> int:
+	var best := -1
+	var best_d := radius * radius
+	var min_cell := _cell(point - Vector3.ONE * radius)
+	var max_cell := _cell(point + Vector3.ONE * radius)
+	for x in range(min_cell.x, max_cell.x + 1):
+		for y in range(min_cell.y, max_cell.y + 1):
+			for z in range(min_cell.z, max_cell.z + 1):
+				for i: int in _grid.get(Vector3i(x, y, z), []):
+					if _alive[i] == 0:
+						continue
+					var d := _positions[i].distance_squared_to(point)
+					if d <= best_d:
+						best_d = d
+						best = i
+	return best
+
+
+func flake_position(i: int) -> Vector3:
+	return _positions[i]
+
+
+## Hebt eine Flocke auf einmal auf, egal wie dick sie ist.
+func pick(i: int) -> void:
+	if _alive[i] == 0:
+		return
+	_alive[i] = 0
+	_dirt[i] = 0.0
+	if _links[i] >= 0:
+		_apply_look(i)
+	else:
+		_fading[i] = 0.0
+	_count_group(i, -1, true)
+	remaining -= 1
+	flakes_removed.emit(1, roundi(_dirt_max[i] * coin_mult))
+
+
 ## Wie viele Flocken lägen im Umkreis? (ohne zu putzen)
 func count_at(point: Vector3, radius: float) -> int:
 	var n := 0

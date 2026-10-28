@@ -1,6 +1,6 @@
 // Verwittertes Holz (Planken, Pfähle, Treibholz): Maserung entlang der lokalen y- oder x-Achse, ausgebleicht.
 shader_type spatial;
-render_mode diffuse_burley;
+render_mode diffuse_toon, specular_toon;
 
 #include "res://addons/clean_core/shaders/noise.gdshaderinc"
 
