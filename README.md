@@ -17,7 +17,9 @@ und machst sie sauber. Erst per Hand mit dem Staubwedel, später immer schneller
 - **Tempo-Anzeige**: Flocken pro Minute
 - **Speichern**: automatisch alle 30 Sekunden, beim Öffnen des Menüs und beim Beenden. „Neues Spiel“ im Menü
 - **Staub-Radar**: lässt den restlichen Staub kurz gelb leuchten
-- Geräusche (per Code erzeugt), fliegende Münzen, Pause-Menü mit Maus-Empfindlichkeit und Lautstärke
+- Geräusche (per Code erzeugt), ruhige Hintergrundmusik, fliegende Münzen
+- **Grafik**: weicher Staub, prozedurale Holz-, Parkett-, Wand- und Marmor-Shader, Kronleuchter, Rundbogenfenster mit Lichtkegeln im Dunst, Lesetische mit Bankierslampen
+- **Startmenü** mit Kamerafahrt durch den Lesesaal, Einstellungen für Maus, Lautstärke, Musik und Grafikstufe (Niedrig / Mittel / Hoch)
 
 ## Spielen
 
@@ -38,6 +40,7 @@ und machst sie sauber. Erst per Hand mit dem Staubwedel, später immer schneller
 | U oder Tab | Upgrade-Laden |
 | R | Staub-Radar |
 | Esc | Menü / Pause |
+| F1 | Steuerungshilfe ein/aus |
 
 ## Aufbau
 
@@ -51,6 +54,15 @@ Das Projekt ist zweigeteilt, damit man den Kern für weitere Putzspiele wiederve
 Die Welt wird komplett im Code erzeugt. Spielstand: `user://bibliothek_spielstand.json`, Einstellungen: `user://settings.cfg`
 (unter Windows in `%APPDATA%\Godot\app_userdata\Bibliothek entstauben`).
 
-## Ideen für die nächsten Schritte
+## Als Windows-Programm (.exe) exportieren
 
-- Phase 5: Musik, Lichtstrahlen, bessere Modelle, Export als .exe
+1. Einmalig die Export-Vorlagen installieren: im Editor **Editor → Export-Vorlagen verwalten → Herunterladen und installieren**.
+2. **Projekt → Exportieren**, Vorlage **Windows** auswählen, **Projekt exportieren**.
+3. Das Spiel liegt danach als eine einzige Datei in `build/Bibliothek entstauben.exe`.
+
+Ohne Editor geht es auch auf der Kommandozeile: `godot --headless --path . --export-release "Windows"`
+
+## Werkzeuge
+
+- **Foto-Rundgang**: `godot --path . -- --screenshots` macht Bilder vom Menü, vom Laden und von festen Kamerapunkten und speichert sie in `screenshots/`.
+- **Musik neu erzeugen**: `python3 tools/make_music.py` (braucht numpy und ffmpeg) schreibt `game/library/audio/musik.ogg`.

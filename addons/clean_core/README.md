@@ -45,5 +45,9 @@ erst per Hand, dann immer schneller“. Hier steht nichts über ein bestimmtes T
 6. Weitere Säle: `add_zone(id, name, grundfläche, bonus, münzfaktor, farbe)` in `_build_world()`, Schmutz mit `zone.mess.add_area(...)`,
    Tür mit `add_door(...)`, freischalten über `CleanUpgrade.make_zone(..., zone_id)`.
 7. Schmutzfarbe ändern: `mess.base_color = Color(...)` am Anfang von `_build_world()`.
+8. Aussehen: in der Config `ui_title_font`, `ui_body_font` und die drei `ui_*_color` setzen; daraus baut `CleanTheme` Menü, Anzeige und Laden.
+   `_build_environment()` muss `environment` setzen, damit die Grafikstufe im Menü wirkt (`apply_quality`).
+9. Musik: `music_file` in der Config (läuft in Schleife, eigener Regler im Menü). Untertitel fürs Startmenü: `game_subtitle`.
+10. Startmenü-Kamerafahrt über `_title_view()`, Foto-Rundgang (`godot --path . -- --screenshots`) über `_screenshot_views()`.
 
 Den Ordner `addons/clean_core` kann man unverändert in ein anderes Godot-4.7-Projekt kopieren.

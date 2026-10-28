@@ -5,7 +5,9 @@ extends CanvasLayer
 
 signal settings_changed(mouse_sensitivity: float, volume: float)
 signal quality_changed(level: int)
+signal music_changed(volume: float)
 signal menu_opened
+signal menu_closed
 signal quit_requested
 signal new_game_requested
 
@@ -16,6 +18,7 @@ const HELP_SECONDS := 25.0   # so lange bleibt die Steuerungshilfe beim Start si
 var config: CleanGameConfig   # vor add_child setzen
 var mouse_sensitivity := 0.0025
 var volume := 0.8
+var music_volume := 0.6
 var quality := 1              # 0 niedrig, 1 mittel, 2 hoch
 
 var _zone_label: Label
@@ -32,6 +35,7 @@ var _help: Label
 var _help_tween: Tween
 var _menu: Control
 var _menu_button: Button
+var _menu_info: Label
 var _root: Control
 var _title_font: Font
 
@@ -188,6 +192,12 @@ func close_menu() -> void:
 	_menu_button.release_focus()   # sonst löst die Leertaste den Knopf statt Springen aus
 	get_tree().paused = false
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	menu_closed.emit()
+
+
+## Zeile unter dem Titel, z.B. der Spielstand.
+func set_menu_info(text: String) -> void:
+	_menu_info.text = text
 
 
 func set_values(zone_name: String, percent: float, coins: int, tool_text: String, affordable: int, found: int) -> void:
@@ -276,6 +286,14 @@ func _build_menu() -> void:
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_color_override("font_color", config.ui_accent_color.lightened(0.25))
 	title.add_theme_constant_override("outline_size", 10)
+	if config.game_subtitle != "":
+		var subtitle := _label(outer, 20)
+		subtitle.text = config.game_subtitle
+		subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		subtitle.modulate = Color(1, 1, 1, 0.85)
+	_menu_info = _label(outer, 16)
+	_menu_info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_menu_info.add_theme_color_override("font_color", config.ui_accent_color)
 
 	var panel := PanelContainer.new()
 	outer.add_child(panel)
@@ -292,9 +310,12 @@ func _build_menu() -> void:
 	var sens := _slider(box, 0.0005, 0.006, mouse_sensitivity)
 	var vol_label := _label(box, 17)
 	var vol := _slider(box, 0.0, 1.0, volume)
+	var music_label := _label(box, 17)
+	var music := _slider(box, 0.0, 1.0, music_volume)
 	var update_labels := func() -> void:
 		sens_label.text = "Maus-Empfindlichkeit: %d %%" % roundi(mouse_sensitivity / 0.0025 * 100.0)
 		vol_label.text = "Lautstärke: %d %%" % roundi(volume * 100.0)
+		music_label.text = "Musik: %d %%" % roundi(music_volume * 100.0)
 	update_labels.call()
 	sens.value_changed.connect(func(v: float) -> void:
 		mouse_sensitivity = v
@@ -302,6 +323,10 @@ func _build_menu() -> void:
 		_apply_settings())
 	vol.value_changed.connect(func(v: float) -> void:
 		volume = v
+		update_labels.call()
+		_apply_settings())
+	music.value_changed.connect(func(v: float) -> void:
+		music_volume = v
 		update_labels.call()
 		_apply_settings())
 
@@ -335,10 +360,12 @@ func _build_menu() -> void:
 func _apply_settings() -> void:
 	settings_changed.emit(mouse_sensitivity, volume)
 	quality_changed.emit(quality)
+	music_changed.emit(music_volume)
 	var cfg := ConfigFile.new()
 	cfg.set_value("steuerung", "maus", mouse_sensitivity)
 	cfg.set_value("audio", "lautstaerke", volume)
 	cfg.set_value("grafik", "qualitaet", quality)
+	cfg.set_value("audio", "musik", music_volume)
 	cfg.save(SETTINGS_PATH)
 
 
@@ -347,6 +374,7 @@ func _load_settings() -> void:
 	if cfg.load(SETTINGS_PATH) == OK:
 		mouse_sensitivity = cfg.get_value("steuerung", "maus", mouse_sensitivity)
 		volume = cfg.get_value("audio", "lautstaerke", volume)
+		music_volume = cfg.get_value("audio", "musik", music_volume)
 		quality = clampi(int(cfg.get_value("grafik", "qualitaet", quality)), 0, QUALITY_NAMES.size() - 1)
 
 

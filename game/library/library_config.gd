@@ -16,6 +16,8 @@ static func create() -> CleanGameConfig:
 	c.save_file = "user://bibliothek_spielstand.json"
 	c.ui_title_font = "res://game/library/fonts/Cinzel.ttf"
 	c.ui_body_font = "res://game/library/fonts/Lora.ttf"
+	c.music_file = "res://game/library/audio/musik.ogg"
+	c.game_subtitle = "Ein gemütliches Putzspiel zwischen endlosen Regalen"
 
 	c.tools.assign([
 		CleanTool.make("duster", "Staubwedel", 1, CleanTool.Style.SWEEP),
