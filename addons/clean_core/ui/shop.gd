@@ -49,9 +49,14 @@ func _ready() -> void:
 	_coins_label = _label(head, 26, "")
 	_coins_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
 
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(0, 440)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	box.add_child(scroll)
 	_rows = VBoxContainer.new()
 	_rows.add_theme_constant_override("separation", 6)
-	box.add_child(_rows)
+	_rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_rows)
 
 	box.add_child(HSeparator.new())
 	_books_title = _label(box, 22, "")

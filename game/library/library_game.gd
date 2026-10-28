@@ -253,6 +253,9 @@ func _build_case(cx: float, cz: float, dir: float, width: float, height: float, 
 	var inner := width - 0.1
 	var back := cz - dir * (d * 0.5 - 0.03)
 	var no_excludes: Array[Rect2] = []
+	var strip := d - 0.36
+	var strip_z := cz + dir * (d * 0.5 - 0.02 - strip * 0.5)
+	var dusty_tops: Array[float] = []
 	for i in boards.size():
 		var board_y: float = boards[i]
 		var top := board_y + 0.02
@@ -266,13 +269,15 @@ func _build_case(cx: float, cz: float, dir: float, width: float, height: float, 
 		var block_h := minf(gap, 0.3)
 		add_collider(Vector3(inner, block_h, 0.3), Vector3(cx, top + block_h * 0.5, back + dir * 0.15))
 		if i < dusty:
-			var strip := d - 0.36
+			dusty_tops.append(top)
 			var extra := UPPER_BOARD_DIRT if board_y > 1.5 else 0.0
 			_shelf_spots.append(Vector3(cx + _rng.randf_range(-inner * 0.4, inner * 0.4), top, cz + dir * (d * 0.5 - 0.02 - strip * 0.5)))
 			mess.add_area(Vector3(cx, top, cz + dir * (d * 0.5 - 0.02 - strip * 0.5)),
 				Vector2(inner - 0.04, strip), 0.075, 0.42, no_excludes, extra)
 	if dusty > 0:
 		_build_ladder(cx + _rng.randf_range(-1.0, 1.0), cz + dir * (d * 0.5), dir, height)
+		# Schiene für einen Regal-Roboter (wird erst sichtbar, wenn einer gekauft ist)
+		add_rail(Vector3(cx - inner * 0.5 + 0.2, 0, strip_z), Vector3(cx + inner * 0.5 - 0.2, 0, strip_z), dusty_tops, Vector3(0, 0, dir))
 
 
 ## Eine Leiter vor dem Regal. Man klettert, indem man auf das Regal zu läuft.

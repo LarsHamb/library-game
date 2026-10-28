@@ -29,6 +29,11 @@ static func create() -> CleanGameConfig:
 		CleanUpgrade.make("value", "Staubhändler", "+25 % Münzen pro Flocke", 300, 2.1, 6, "coin_mult", 0.0, 0.25),
 		CleanUpgrade.make("radar", "Radar-Akku", "Radar lädt 3,5 s schneller", 200, 2.0, 4, "radar_cooldown", -3.5),
 		CleanUpgrade.make("vacuum", "Staubsauger", "Zweites Werkzeug: schmaler, aber 3× so stark und mit mehr Reichweite", 2500, 1.0, 1, "", 0.0, 0.0, "vacuum"),
+		# Automatisierung: jede Stufe = ein Roboter mehr
+		CleanUpgrade.make_bot("rail_bot", "Regal-Roboter", "Fährt an einem Regal entlang und putzt alle Böden auf einmal", 400, 1.22, 32, "rail"),
+		CleanUpgrade.make_bot("drone", "Saug-Drohne", "Fliegt über die Regale und saugt selbst Staub auf Boden und Tischen", 600, 1.5, 8, "drone"),
+		CleanUpgrade.make("bot_speed", "Schnellere Motoren", "+20 % Tempo aller Roboter", 500, 1.8, 6, "bot_speed", 0.0, 0.2),
+		CleanUpgrade.make("bot_power", "Bessere Bürsten", "+25 % Putzkraft aller Roboter", 500, 1.8, 6, "bot_power", 0.0, 0.25),
 	])
 
 	# make(id, Name, Bonus-Text, Wert, +, ×, Werkzeug)
