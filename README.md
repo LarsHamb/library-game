@@ -62,7 +62,7 @@ Die Welt wird komplett im Code erzeugt. Spielstand: `user://bibliothek_spielstan
 
 1. Einmalig die Export-Vorlagen installieren: im Editor **Editor → Export-Vorlagen verwalten → Herunterladen und installieren**.
 2. **Projekt → Exportieren**, Vorlage **Windows** auswählen, **Projekt exportieren**.
-3. Das Spiel liegt danach als eine einzige Datei in `build/Bibliothek entstauben.exe`.
+3. Das Spiel liegt danach als eine einzige Datei in `build/Bibliothek entstauben.exe`. Der Ordner `build/` ist im Repo schon angelegt (Godot legt ihn nicht selbst an).
 
 Ohne Editor geht es auch auf der Kommandozeile: `godot --headless --path . --export-release "Windows"`
 
