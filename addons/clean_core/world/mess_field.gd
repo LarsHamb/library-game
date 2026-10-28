@@ -8,7 +8,7 @@ signal flakes_removed(count: int, coins: int)
 
 const CELL_SIZE := 1.0     # Rastergröße für die schnelle Suche nach Flocken
 const FADE_TIME := 0.3     # so lange schrumpft eine Flocke, bevor sie weg ist
-const FLAKE_SIZE := 0.34   # Grundgröße einer Flocke in Metern
+const FLAKE_SIZE := 0.55   # Grundgröße einer Flocke in Metern (weiche Ränder, überlappen sich stark)
 const MIN_DIRT := 1.0      # dünnste Stelle
 const MAX_DIRT := 3.0      # dickste Stelle
 
@@ -254,25 +254,8 @@ func _is_excluded(p: Vector3, excludes: Array[Rect2]) -> bool:
 
 
 func _make_flake_mesh() -> Mesh:
-	# Weicher, runder Fleck: radialer Verlauf von deckend zu durchsichtig.
-	var gradient := Gradient.new()
-	gradient.offsets = PackedFloat32Array([0.0, 0.55, 1.0])
-	gradient.colors = PackedColorArray([Color(1, 1, 1, 1), Color(1, 1, 1, 0.75), Color(1, 1, 1, 0)])
-	var tex := GradientTexture2D.new()
-	tex.gradient = gradient
-	tex.fill = GradientTexture2D.FILL_RADIAL
-	tex.fill_from = Vector2(0.5, 0.5)
-	tex.fill_to = Vector2(1.0, 0.5)
-	tex.width = 64
-	tex.height = 64
-
-	var mat := StandardMaterial3D.new()
-	mat.albedo_texture = tex
-	mat.vertex_color_use_as_albedo = true
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.roughness = 1.0
-	mat.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
-
+	var mat := ShaderMaterial.new()
+	mat.shader = preload("res://addons/clean_core/shaders/mess_flake.gdshader")
 	var plane := PlaneMesh.new()
 	plane.size = Vector2(FLAKE_SIZE, FLAKE_SIZE)
 	plane.material = mat

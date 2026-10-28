@@ -3,6 +3,7 @@ extends CleanGame
 ## Alle Spielregeln (Münzen, Upgrades, Speichern ...) kommen aus addons/clean_core.
 
 const LibraryConfig := preload("res://game/library/library_config.gd")
+const Materials := preload("res://game/library/materials.gd")
 
 # --- Raum ---
 const HALL_SIZE := Vector2(22.0, 28.0)   # Breite (x) und Länge (z) in Metern
@@ -39,6 +40,7 @@ var _book_colors := PackedColorArray()
 var _shelf_spots: Array[Vector3] = []   # mögliche Verstecke für seltene Bücher auf Regalböden
 var _no_floor_dust: Array[Rect2] = []
 var _extra_spots: Array[Vector3] = []   # Verstecke für Bücher in den Nebensälen
+var _lib_mats := {}
 
 
 # ================================================================ Anbindung an den Kern
@@ -98,17 +100,20 @@ func _collectible_spots() -> Array[Vector3]:
 
 
 func _make_collectible_model(_def: CleanCollectibleDef) -> Node3D:
-	var book := MeshInstance3D.new()
-	var book_mesh := BoxMesh.new()
-	book_mesh.size = Vector3(0.24, 0.05, 0.17)
-	var book_mat := StandardMaterial3D.new()
-	book_mat.albedo_color = Color(0.45, 0.08, 0.1)
-	book_mat.emission_enabled = true
-	book_mat.emission = Color(1.0, 0.75, 0.3)
-	book_mat.emission_energy_multiplier = 0.6
-	book_mesh.material = book_mat
-	book.mesh = book_mesh
-	book.position.y = 0.025
+	# Ein dickes, altes Buch: roter Einband mit Goldkanten, helle Seiten, leichtes Leuchten
+	var book := Node3D.new()
+	var cover := Materials.glow(Color(0.5, 0.08, 0.1), 0.25)
+	cover.roughness = 0.5
+	var gold := Materials.glow(Color(1.0, 0.75, 0.3), 1.2)
+	gold.metallic = 0.8
+	var pages := mat("collectible_pages", Color(0.93, 0.88, 0.74), 0.9)
+	_part(book, _box_mesh(Vector3(0.26, 0.012, 0.19), cover), Vector3(0, 0.006, 0))
+	_part(book, _box_mesh(Vector3(0.26, 0.012, 0.19), cover), Vector3(0, 0.064, 0))
+	_part(book, _box_mesh(Vector3(0.245, 0.048, 0.18), pages), Vector3(0.006, 0.035, 0))
+	_part(book, _box_mesh(Vector3(0.016, 0.07, 0.19), cover), Vector3(-0.122, 0.035, 0))
+	for z: float in [-0.06, 0.06]:
+		_part(book, _box_mesh(Vector3(0.018, 0.072, 0.012), gold), Vector3(-0.122, 0.035, z))
+	_part(book, _box_mesh(Vector3(0.1, 0.002, 0.07), gold), Vector3(0.02, 0.071, 0))
 	book.rotation.y = randf() * TAU
 	return book
 
@@ -120,22 +125,44 @@ func _make_duster() -> Node3D:
 	duster.rotation = Vector3(-1.22, 0.0, -0.21)   # schräg nach vorne oben
 	var handle := MeshInstance3D.new()
 	var stick := CylinderMesh.new()
-	stick.top_radius = 0.012
+	stick.top_radius = 0.011
 	stick.bottom_radius = 0.016
 	stick.height = 0.42
-	stick.material = mat("duster_handle", Color(0.45, 0.28, 0.15))
+	stick.material = _lib_mat("table")
 	handle.mesh = stick
 	duster.add_child(handle)
-	var head := MeshInstance3D.new()
-	head.name = "Head"   # wird mit den Upgrades größer
-	var fluff := SphereMesh.new()
-	fluff.radius = 0.07
-	fluff.height = 0.14
-	fluff.material = mat("duster_feathers", Color(0.93, 0.62, 0.72), 1.0)
-	head.mesh = fluff
-	head.position.y = 0.28
+	var ferrule := MeshInstance3D.new()
+	var ring := CylinderMesh.new()
+	ring.top_radius = 0.018
+	ring.bottom_radius = 0.014
+	ring.height = 0.05
+	ring.material = _brass()
+	ferrule.mesh = ring
+	ferrule.position.y = 0.2
+	duster.add_child(ferrule)
+	# Federkopf: viele schmale, nach außen geneigte Federn (wird mit den Upgrades größer)
+	var head := Node3D.new()
+	head.name = "Head"
+	head.position.y = 0.22
 	head.scale = Vector3(1.0, 1.5, 1.0)
 	duster.add_child(head)
+	var feather_colors := [Color(0.93, 0.62, 0.72), Color(0.85, 0.5, 0.62), Color(0.97, 0.78, 0.82)]
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 11
+	for i in 22:
+		var feather := MeshInstance3D.new()
+		var plume := SphereMesh.new()
+		plume.radius = 0.022
+		plume.height = 0.13
+		plume.radial_segments = 8
+		plume.rings = 4
+		plume.material = mat("duster_feathers_%d" % (i % 3), feather_colors[i % 3], 1.0)
+		feather.mesh = plume
+		var angle := rng.randf() * TAU
+		var tilt := rng.randf_range(0.15, 0.85) if i > 3 else 0.05
+		feather.rotation = Vector3(tilt * cos(angle), 0.0, tilt * sin(angle))
+		feather.position = feather.basis * Vector3(0, 0.055, 0) + Vector3(cos(angle), 0, sin(angle)) * 0.01
+		head.add_child(feather)
 	return duster
 
 
@@ -171,57 +198,196 @@ func _make_vacuum() -> Node3D:
 	return vacuum
 
 
+## Kamerapunkte für den Foto-Rundgang (godot --path . -- --screenshots).
+func _screenshot_views() -> Array[Dictionary]:
+	return [
+		{"name": "lesesaal", "pos": Vector3(0, 1.7, 12.6), "look": Vector3(0, 2.2, -6)},
+		{"name": "von_oben", "pos": Vector3(-2, 6.0, 13.2), "look": Vector3(1, 0.5, -4)},
+		{"name": "regalgang", "pos": Vector3(10.2, 1.6, 1.25), "look": Vector3(0, 1.2, 1.25)},
+		{"name": "regal_nah", "pos": Vector3(3.2, 1.35, 1.0), "look": Vector3(3.6, 0.9, -0.45)},
+		{"name": "boden_staub", "pos": Vector3(0.4, 1.3, 6.5), "look": Vector3(0, 0, 3.0)},
+		{"name": "lesetische", "pos": Vector3(-1.8, 2.0, 13.4), "look": Vector3(-5, 0.7, 9.5)},
+		{"name": "fenster", "pos": Vector3(6, 2.2, -2.5), "look": Vector3(-11, 4.0, -9.0)},
+		{"name": "kartenarchiv", "pos": Vector3(-12.2, 1.7, 13.2), "look": Vector3(-22, 0.8, 3)},
+		{"name": "kuppelsaal", "pos": Vector3(12.2, 1.8, 13.2), "look": Vector3(22, 2.5, 2)},
+	]
+
+
 # ================================================================ Lesesaal
 
 func _build_environment() -> void:
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color(0.08, 0.06, 0.05)
+	env.background_color = Color(0.03, 0.022, 0.015)
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.85, 0.75, 0.6)
-	env.ambient_light_energy = 0.45
-	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	env.ambient_light_color = Color(0.8, 0.68, 0.52)
+	env.ambient_light_energy = 0.3
+	env.tonemap_mode = Environment.TONE_MAPPER_AGX
+	env.tonemap_exposure = 1.15
 	env.ssao_enabled = true
+	env.ssao_radius = 1.2
+	env.ssao_intensity = 1.8
+	env.ssil_intensity = 0.8
+	env.ssr_max_steps = 48
+	env.sdfgi_use_occlusion = true
+	env.sdfgi_energy = 0.8
 	env.glow_enabled = true
-	env.glow_intensity = 0.4
-	env.fog_enabled = true
-	env.fog_light_color = Color(0.5, 0.42, 0.33)
-	env.fog_density = 0.01
+	env.glow_intensity = 0.55
+	env.glow_bloom = 0.04
+	env.glow_hdr_threshold = 1.1
+	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SOFTLIGHT
+	# Leichter, warmer Dunst im Raum: macht Lichtkegel der Fenster sichtbar
+	env.volumetric_fog_enabled = true
+	env.volumetric_fog_density = 0.012
+	env.volumetric_fog_albedo = Color(0.95, 0.85, 0.7)
+	env.volumetric_fog_anisotropy = 0.55
+	env.volumetric_fog_length = 40.0
+	env.volumetric_fog_ambient_inject = 0.15
+	env.adjustment_enabled = true
+	env.adjustment_contrast = 1.06
+	env.adjustment_saturation = 1.08
 	var world_env := WorldEnvironment.new()
 	world_env.environment = env
 	add_child(world_env)
+	environment = env
 
-	var glow := StandardMaterial3D.new()
-	glow.albedo_color = Color(1.0, 0.85, 0.6)
-	glow.emission_enabled = true
-	glow.emission = Color(1.0, 0.8, 0.5)
-	glow.emission_energy_multiplier = 3.0
-	for x: float in [-6.0, 0.0, 6.0]:
-		for z: float in [-11.0, -3.0, 5.0, 11.0]:
-			var lamp := OmniLight3D.new()
-			lamp.position = Vector3(x, WALL_HEIGHT - 1.5, z)
-			lamp.light_color = Color(1.0, 0.82, 0.6)
-			lamp.light_energy = 1.6
-			lamp.omni_range = 11.0
-			lamp.shadow_enabled = x == 0.0
-			add_child(lamp)
-			var bulb := MeshInstance3D.new()
-			var sphere := SphereMesh.new()
-			sphere.radius = 0.22
-			sphere.height = 0.44
-			sphere.material = glow
-			bulb.mesh = sphere
-			bulb.position = lamp.position + Vector3.UP * 0.3
-			bulb.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			add_child(bulb)
-			box(Vector3(0.02, 1.2, 0.02), Vector3(x, WALL_HEIGHT - 0.6, z), mat("chain", Color(0.2, 0.18, 0.15)), false)
+	# Kronleuchter: große im Mittelgang (mit Schatten), kleinere über den Regalreihen
+	for z: float in [-11.0, -3.0, 5.0, 11.0]:
+		_add_chandelier(Vector3(0.0, WALL_HEIGHT, z), 0.9, 1.9, true)
+		for x: float in [-6.5, 6.5]:
+			_add_chandelier(Vector3(x, WALL_HEIGHT, z), 0.55, 1.1, false)
+	_build_windows()
+
+
+## Kronleuchter mit Kette, Messingring und Kerzen. top = Aufhängepunkt an der Decke.
+func _add_chandelier(top: Vector3, radius: float, energy: float, shadow: bool) -> void:
+	var drop := 1.3 + radius * 0.5
+	var center := top - Vector3(0, drop, 0)
+	box(Vector3(0.025, drop, 0.025), top - Vector3(0, drop * 0.5, 0), _brass(), false)
+	var ring := MeshInstance3D.new()
+	var torus := TorusMesh.new()
+	torus.inner_radius = radius - 0.035
+	torus.outer_radius = radius
+	torus.rings = 32
+	torus.ring_segments = 8
+	torus.material = _brass()
+	ring.mesh = torus
+	ring.position = center
+	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(ring)
+	var hub := MeshInstance3D.new()
+	var hub_mesh := SphereMesh.new()
+	hub_mesh.radius = 0.09 + radius * 0.06
+	hub_mesh.height = hub_mesh.radius * 2.6
+	hub_mesh.material = _brass()
+	hub.mesh = hub_mesh
+	hub.position = center
+	add_child(hub)
+	var candles := 8 if radius > 0.7 else 6
+	var flame_mat := _lib_mat_glow("flame", Color(1.0, 0.78, 0.45), 6.0)
+	var wax := mat("candle_wax", Color(0.95, 0.92, 0.85), 0.6)
+	for i in candles:
+		var a := TAU * i / candles
+		var p := center + Vector3(cos(a), 0, sin(a)) * (radius - 0.0175)
+		box(Vector3(radius, 0.015, 0.025), center.lerp(p, 0.5), _brass(), false).rotation.y = -a
+		var candle := MeshInstance3D.new()
+		var stick := CylinderMesh.new()
+		stick.top_radius = 0.018
+		stick.bottom_radius = 0.018
+		stick.height = 0.14
+		stick.radial_segments = 8
+		stick.material = wax
+		candle.mesh = stick
+		candle.position = p + Vector3(0, 0.08, 0)
+		candle.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(candle)
+		var flame := MeshInstance3D.new()
+		var drop_mesh := SphereMesh.new()
+		drop_mesh.radius = 0.016
+		drop_mesh.height = 0.05
+		drop_mesh.radial_segments = 8
+		drop_mesh.rings = 4
+		drop_mesh.material = flame_mat
+		flame.mesh = drop_mesh
+		flame.position = p + Vector3(0, 0.175, 0)
+		flame.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(flame)
+	var lamp := OmniLight3D.new()
+	lamp.position = center + Vector3(0, 0.25, 0)
+	lamp.light_color = Color(1.0, 0.8, 0.56)
+	lamp.light_energy = energy
+	lamp.omni_range = 12.0 if shadow else 9.0
+	lamp.omni_attenuation = 1.2
+	lamp.light_volumetric_fog_energy = 0.4
+	lamp.shadow_enabled = shadow
+	lamp.shadow_blur = 1.5
+	add_child(lamp)
+
+
+## Hohe Rundbogenfenster: in der Stirnwand hinter dem Start und in den Seitenwänden (nur dort,
+## wo keine Nebensäle anschließen). Durch jedes fällt ein Lichtkegel schräg in den Saal.
+func _build_windows() -> void:
+	var hx := HALL_SIZE.x * 0.5
+	var hz := HALL_SIZE.y * 0.5
+	for x: float in [-7.0, 0.0, 7.0]:
+		_add_window(Vector3(x, 0, hz), Vector3(0, 0, -1), x == 0.0)
+	for side: float in [-1.0, 1.0]:
+		for z: float in [-11.5, -7.75, -4.0]:
+			_add_window(Vector3(side * hx, 0, z), Vector3(-side, 0, 0), z == -7.75)
+
+
+## Ein Fenster in der Wand bei base (Bodenhöhe), inward zeigt in den Raum.
+func _add_window(base: Vector3, inward: Vector3, shadow: bool) -> void:
+	var width := 1.7
+	var sill := 3.4
+	var height := 2.4   # bis zum Bogenansatz
+	var along := Vector3(inward.z, 0, -inward.x).abs()   # Richtung entlang der Wand
+	var face := base + inward * 0.005
+	var pane_mat := _lib_mat_glow("window", Color(0.78, 0.86, 1.0), 1.6)
+	var frame := _lib_mat("door")
+	# Glas: Rechteck plus Halbkreis
+	var pane := box(along * width + Vector3.UP * height + inward.abs() * 0.02, face + Vector3.UP * (sill + height * 0.5), pane_mat, false)
+	pane.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var arch := MeshInstance3D.new()
+	var disc := CylinderMesh.new()
+	disc.top_radius = width * 0.5
+	disc.bottom_radius = width * 0.5
+	disc.height = 0.02
+	disc.radial_segments = 32
+	disc.material = pane_mat
+	arch.mesh = disc
+	arch.position = face + Vector3.UP * (sill + height)
+	arch.basis = Basis(along, PI * 0.5)   # Zylinderachse zeigt danach in den Raum
+	arch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(arch)
+	# Rahmen, Sprossen und Fensterbank
+	var depth := inward * 0.06
+	var depth_size := inward.abs() * 0.08
+	box(along * (width + 0.2) + Vector3.UP * 0.12 + inward.abs() * 0.22, face + inward * 0.1 + Vector3.UP * (sill - 0.06), frame, false)
+	for side: float in [-1.0, 1.0]:
+		box(along * 0.1 + Vector3.UP * height + depth_size, face + depth + along * side * (width * 0.5 + 0.03) + Vector3.UP * (sill + height * 0.5), frame, false)
+	box(along * 0.05 + Vector3.UP * (height + width * 0.5) + depth_size, face + depth + Vector3.UP * (sill + (height + width * 0.5) * 0.5), frame, false)
+	for k in 3:
+		box(along * width + Vector3.UP * 0.04 + depth_size, face + depth + Vector3.UP * (sill + height * (k + 1) / 3.0), frame, false)
+	# Lichtkegel nach innen und unten
+	var sun := SpotLight3D.new()
+	add_child(sun)
+	sun.global_position = face + inward * 0.3 + Vector3.UP * (sill + height * 0.8)
+	sun.look_at(sun.global_position + inward * 1.0 + Vector3.DOWN * 0.75 + along * 0.25)
+	sun.light_color = Color(1.0, 0.93, 0.8)
+	sun.light_energy = 5.0
+	sun.spot_range = 16.0
+	sun.spot_angle = 22.0
+	sun.spot_attenuation = 0.8
+	sun.light_volumetric_fog_energy = 2.5
+	sun.shadow_enabled = shadow
 
 
 func _build_hall() -> void:
 	var hx := HALL_SIZE.x * 0.5
 	var hz := HALL_SIZE.y * 0.5
-	box(Vector3(HALL_SIZE.x, 0.2, HALL_SIZE.y), Vector3(0, -0.1, 0), _floor_mat())
-	var wall := mat("wall", Color(0.5, 0.4, 0.32), 0.95)
+	box(Vector3(HALL_SIZE.x, 0.2, HALL_SIZE.y), Vector3(0, -0.1, 0), _lib_mat("floor"))
+	var wall := _lib_mat("wall")
 	box(Vector3(HALL_SIZE.x, WALL_HEIGHT, 0.3), Vector3(0, WALL_HEIGHT * 0.5, -hz - 0.15), wall)
 	box(Vector3(HALL_SIZE.x, WALL_HEIGHT, 0.3), Vector3(0, WALL_HEIGHT * 0.5, hz + 0.15), wall)
 	# Seitenwände mit je einer Tür zu einem Nebensaal
@@ -233,7 +399,7 @@ func _build_hall() -> void:
 		box(Vector3(0.3, WALL_HEIGHT, front_len), Vector3(x, WALL_HEIGHT * 0.5, hz - front_len * 0.5), wall)
 		box(Vector3(0.3, WALL_HEIGHT - DOOR_H, DOOR_W), Vector3(x, DOOR_H + (WALL_HEIGHT - DOOR_H) * 0.5, DOOR_Z), wall)
 	box(Vector3(HALL_SIZE.x + 0.6, 0.3, HALL_SIZE.y + 0.6), Vector3(0, WALL_HEIGHT + 0.15, 0),
-		mat("ceiling", Color(0.3, 0.22, 0.16)), false)
+		_lib_mat("ceiling"), false)
 
 
 # ================================================================ Nebensäle
@@ -245,27 +411,27 @@ func _build_archive() -> void:
 	var cz := 6.0
 	var size := Vector2(16.0, 16.0)
 	var height := 4.5
-	_build_room(Vector3(cx, 0, cz), size, height, -1.0, mat("archive_wall", Color(0.4, 0.37, 0.34), 0.95),
-		mat("archive_ceiling", Color(0.24, 0.21, 0.19)))
+	_build_room(Vector3(cx, 0, cz), size, height, -1.0, _lib_mat("floor_archive"), _lib_mat("archive_wall"),
+		_lib_mat("ceiling"))
 	var hx := HALL_SIZE.x * 0.5
-	add_door(zone, Vector3(0.2, DOOR_H, DOOR_W), Vector3(-hx - 0.15, DOOR_H * 0.5, DOOR_Z), mat("door", Color(0.3, 0.18, 0.1)),
+	add_door(zone, Vector3(0.2, DOOR_H, DOOR_W), Vector3(-hx - 0.15, DOOR_H * 0.5, DOOR_Z), _lib_mat("door"),
 		"Kartenarchiv\n[U] im Upgrade-Laden öffnen", Vector3(-hx + 0.8, DOOR_H + 0.7, DOOR_Z))
 
 	var excludes: Array[Rect2] = []
 	var none: Array[Rect2] = []
-	var wood := mat("cabinet", Color(0.28, 0.17, 0.1), 0.6)
-	var brass := mat("brass", Color(0.75, 0.6, 0.3), 0.3)
+	var wood := _lib_mat("cabinet")
+	var brass := _brass()
 	for x: float in [-24.5, -21.0, -17.5, -14.0]:
 		for z: float in [0.8, 3.8, 6.4, 11.8]:
 			box(Vector3(2.4, 1.1, 1.0), Vector3(x, 0.55, z), wood)
 			for y: float in [0.3, 0.6, 0.9]:
 				for side: float in [-0.51, 0.51]:
 					box(Vector3(2.3, 0.02, 0.02), Vector3(x, y, z + side), brass, false)
-			zone.mess.add_area(Vector3(x, 1.1, z), Vector2(2.3, 0.9), 0.1, 0.6, none, 0.2)
+			zone.mess.add_area(Vector3(x, 1.1, z), Vector2(2.3, 0.9), 0.1, 0.45, none, 0.2)
 			excludes.append(Rect2(x - 1.25, z - 0.55, 2.5, 1.1))
 	_extra_spots.append(Vector3(-21.0 + 0.6, 1.1, 11.8))
 
-	var blue := mat("globe", Color(0.25, 0.4, 0.55), 0.5)
+	var blue := mat("globe", Color(0.32, 0.45, 0.5), 0.45)
 	for g: Vector2 in [Vector2(-25.8, 13.0), Vector2(-25.8, -0.8), Vector2(-12.5, -0.8)]:
 		box(Vector3(0.08, 0.9, 0.08), Vector3(g.x, 0.45, g.y), brass, false)
 		var globe := MeshInstance3D.new()
@@ -276,6 +442,25 @@ func _build_archive() -> void:
 		globe.mesh = sphere
 		globe.position = Vector3(g.x, 1.2, g.y)
 		add_child(globe)
+		# Messing-Meridian und Fuß
+		var meridian := MeshInstance3D.new()
+		var ring := TorusMesh.new()
+		ring.inner_radius = 0.37
+		ring.outer_radius = 0.4
+		ring.material = brass
+		meridian.mesh = ring
+		meridian.position = globe.position
+		meridian.rotation = Vector3(0, 0.5, PI * 0.5 - 0.41)
+		add_child(meridian)
+		var foot := MeshInstance3D.new()
+		var foot_mesh := CylinderMesh.new()
+		foot_mesh.top_radius = 0.12
+		foot_mesh.bottom_radius = 0.28
+		foot_mesh.height = 0.12
+		foot_mesh.material = wood
+		foot.mesh = foot_mesh
+		foot.position = Vector3(g.x, 0.06, g.y)
+		add_child(foot)
 		add_collider(Vector3(0.6, 1.6, 0.6), Vector3(g.x, 0.8, g.y))
 		excludes.append(Rect2(g.x - 0.4, g.y - 0.4, 0.8, 0.8))
 
@@ -293,10 +478,10 @@ func _build_dome() -> void:
 	var cz := 6.0
 	var size := Vector2(18.0, 16.0)
 	var height := 10.0
-	_build_room(Vector3(cx, 0, cz), size, height, 1.0, mat("dome_wall", Color(0.75, 0.7, 0.62), 0.9),
-		mat("dome_ceiling", Color(0.55, 0.5, 0.45)))
+	_build_room(Vector3(cx, 0, cz), size, height, 1.0, _lib_mat("floor_dome"), _lib_mat("dome_wall"),
+		mat("dome_ceiling", Color(0.8, 0.76, 0.7), 0.9))
 	var hx := HALL_SIZE.x * 0.5
-	add_door(zone, Vector3(0.2, DOOR_H, DOOR_W), Vector3(hx + 0.15, DOOR_H * 0.5, DOOR_Z), mat("door", Color(0.3, 0.18, 0.1)),
+	add_door(zone, Vector3(0.2, DOOR_H, DOOR_W), Vector3(hx + 0.15, DOOR_H * 0.5, DOOR_Z), _lib_mat("door"),
 		"Kuppelsaal\n[U] im Upgrade-Laden öffnen", Vector3(hx - 0.8, DOOR_H + 0.7, DOOR_Z))
 
 	# Glaskuppel als leuchtende Scheibe mit kräftigem Licht
@@ -321,27 +506,46 @@ func _build_dome() -> void:
 	var excludes: Array[Rect2] = []
 	var none: Array[Rect2] = []
 	# Großer Lesetisch in der Mitte
-	var wood := mat("table", Color(0.42, 0.26, 0.14), 0.6)
+	var wood := _lib_mat("table")
 	box(Vector3(3.2, 0.9, 3.2), Vector3(cx, 0.45, cz), wood)
-	zone.mess.add_area(Vector3(cx, 0.9, cz), Vector2(3.0, 3.0), 0.1, 0.6, none, 0.1)
+	zone.mess.add_area(Vector3(cx, 0.9, cz), Vector2(3.0, 3.0), 0.1, 0.45, none, 0.1)
 	excludes.append(Rect2(cx - 1.7, cz - 1.7, 3.4, 3.4))
 	_extra_spots.append(Vector3(cx + 0.9, 0.9, cz - 0.7))
 
 	# Vier Statuen auf Sockeln
-	var marble := mat("marble", Color(0.92, 0.9, 0.86), 0.35)
+	var marble := _lib_mat("marble")
 	for p: Vector2 in [Vector2(14.5, 1.0), Vector2(25.5, 1.0), Vector2(14.5, 11.0), Vector2(25.5, 11.0)]:
 		box(Vector3(1.0, 1.0, 1.0), Vector3(p.x, 0.5, p.y), marble)
+		# Schlichte Büste: Gewand, Schultern, Kopf
 		var statue := MeshInstance3D.new()
-		var capsule := CapsuleMesh.new()
-		capsule.radius = 0.25
-		capsule.height = 1.6
-		capsule.material = marble
-		statue.mesh = capsule
-		statue.position = Vector3(p.x, 1.8, p.y)
+		var robe := CylinderMesh.new()
+		robe.top_radius = 0.2
+		robe.bottom_radius = 0.34
+		robe.height = 1.2
+		robe.material = marble
+		statue.mesh = robe
+		statue.position = Vector3(p.x, 1.68, p.y)
 		add_child(statue)
+		var shoulders := MeshInstance3D.new()
+		var shoulder_mesh := SphereMesh.new()
+		shoulder_mesh.radius = 0.28
+		shoulder_mesh.height = 0.3
+		shoulder_mesh.material = marble
+		shoulders.mesh = shoulder_mesh
+		shoulders.position = Vector3(p.x, 2.3, p.y)
+		shoulders.scale = Vector3(1.0, 1.0, 0.7)
+		add_child(shoulders)
+		var head := MeshInstance3D.new()
+		var head_mesh := SphereMesh.new()
+		head_mesh.radius = 0.13
+		head_mesh.height = 0.32
+		head_mesh.material = marble
+		head.mesh = head_mesh
+		head.position = Vector3(p.x, 2.6, p.y)
+		add_child(head)
 		add_collider(Vector3(0.5, 1.6, 0.5), Vector3(p.x, 1.8, p.y))
 		var under_statue: Array[Rect2] = [Rect2(p.x - 0.28, p.y - 0.28, 0.56, 0.56)]
-		zone.mess.add_area(Vector3(p.x, 1.0, p.y), Vector2(0.9, 0.9), 0.08, 0.5, under_statue)
+		zone.mess.add_area(Vector3(p.x, 1.0, p.y), Vector2(0.9, 0.9), 0.08, 0.4, under_statue)
 		excludes.append(Rect2(p.x - 0.55, p.y - 0.55, 1.1, 1.1))
 
 	# Hohe Bücherwand an der Rückseite (Kulisse)
@@ -357,8 +561,8 @@ func _build_dome() -> void:
 
 
 ## Boden, drei Außenwände und Decke eines Nebensaals. side = -1 links vom Lesesaal, +1 rechts.
-func _build_room(center: Vector3, size: Vector2, height: float, side: float, wall: Material, ceiling: Material) -> void:
-	box(Vector3(size.x, 0.2, size.y), center + Vector3(0, -0.1, 0), _floor_mat())
+func _build_room(center: Vector3, size: Vector2, height: float, side: float, floor_mat: Material, wall: Material, ceiling: Material) -> void:
+	box(Vector3(size.x, 0.2, size.y), center + Vector3(0, -0.1, 0), floor_mat)
 	box(Vector3(0.3, height, size.y), Vector3(center.x + side * (size.x * 0.5 + 0.15), height * 0.5, center.z), wall)
 	box(Vector3(size.x, height, 0.3), Vector3(center.x, height * 0.5, center.z - size.y * 0.5 - 0.15), wall)
 	box(Vector3(size.x, height, 0.3), Vector3(center.x, height * 0.5, center.z + size.y * 0.5 + 0.15), wall)
@@ -399,11 +603,15 @@ func _build_shelves(no_floor_dust: Array[Rect2]) -> void:
 ## Ein Regal. dir = +1 heißt: die offene Seite zeigt nach +z.
 func _build_case(cx: float, cz: float, dir: float, width: float, height: float, boards: Array, dusty: int) -> void:
 	var d := CASE_DEPTH
-	var wood := mat("shelf", Color(0.36, 0.22, 0.13), 0.7)
+	var wood := _lib_mat("shelf")
 	box(Vector3(width, height, 0.03), Vector3(cx, height * 0.5, cz - dir * (d * 0.5 - 0.015)), wood)
 	for side: float in [-1.0, 1.0]:
 		box(Vector3(0.05, height, d), Vector3(cx + side * (width * 0.5 - 0.025), height * 0.5, cz), wood)
 	box(Vector3(width, 0.05, d), Vector3(cx, height - 0.025, cz), wood)
+	# Kranzgesims oben und Sockelleiste unten
+	box(Vector3(width + 0.08, 0.07, d + 0.06), Vector3(cx, height + 0.035, cz + dir * 0.03), wood, false)
+	box(Vector3(width + 0.12, 0.035, d + 0.1), Vector3(cx, height + 0.087, cz + dir * 0.05), wood, false)
+	box(Vector3(width, 0.08, 0.025), Vector3(cx, 0.04, cz + dir * (d * 0.5 - 0.0125)), wood, false)
 
 	var inner := width - 0.1
 	var back := cz - dir * (d * 0.5 - 0.03)
@@ -428,7 +636,7 @@ func _build_case(cx: float, cz: float, dir: float, width: float, height: float, 
 			var extra := UPPER_BOARD_DIRT if board_y > 1.5 else 0.0
 			_shelf_spots.append(Vector3(cx + _rng.randf_range(-inner * 0.4, inner * 0.4), top, cz + dir * (d * 0.5 - 0.02 - strip * 0.5)))
 			mess.add_area(Vector3(cx, top, cz + dir * (d * 0.5 - 0.02 - strip * 0.5)),
-				Vector2(inner - 0.04, strip), 0.075, 0.42, no_excludes, extra)
+				Vector2(inner - 0.04, strip), 0.075, 0.33, no_excludes, extra)
 	if dusty > 0:
 		_build_ladder(cx + _rng.randf_range(-1.0, 1.0), cz + dir * (d * 0.5), dir, height)
 		# Schiene für einen Regal-Roboter (wird erst sichtbar, wenn einer gekauft ist)
@@ -437,7 +645,7 @@ func _build_case(cx: float, cz: float, dir: float, width: float, height: float, 
 
 ## Eine Leiter vor dem Regal. Man klettert, indem man auf das Regal zu läuft.
 func _build_ladder(x: float, front_z: float, dir: float, height: float) -> void:
-	var metal := mat("ladder", Color(0.55, 0.42, 0.25), 0.5)
+	var metal := _brass()
 	var z := front_z + dir * 0.12
 	for side: float in [-0.25, 0.25]:
 		box(Vector3(0.04, height + 0.1, 0.04), Vector3(x + side, (height + 0.1) * 0.5, z), metal, false)
@@ -468,11 +676,8 @@ func _fill_books(cx: float, back: float, dir: float, inner: float, top: float, g
 
 
 func _build_books() -> void:
-	var book_mat := StandardMaterial3D.new()
-	book_mat.vertex_color_use_as_albedo = true
-	book_mat.roughness = 0.85
 	var book_mesh := BoxMesh.new()
-	book_mesh.material = book_mat
+	book_mesh.material = _lib_mat("book")
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.use_colors = true
@@ -487,16 +692,73 @@ func _build_books() -> void:
 
 
 func _build_tables(no_floor_dust: Array[Rect2]) -> void:
-	var wood := mat("table", Color(0.42, 0.26, 0.14), 0.6)
+	var wood := _lib_mat("table")
+	var leather := mat("table_leather", Color(0.16, 0.24, 0.16), 0.7)
 	for x: float in [-5.0, 5.0]:
 		for z: float in [8.0, 11.5]:
 			box(Vector3(2.6, 0.06, 1.2), Vector3(x, 0.75, z), wood)
+			box(Vector3(2.66, 0.08, 1.26), Vector3(x, 0.69, z), wood, false)   # Zarge
+			box(Vector3(1.6, 0.004, 0.7), Vector3(x, 0.782, z), leather, false)   # Schreibunterlage
 			for lx: float in [-1.15, 1.15]:
 				for lz: float in [-0.5, 0.5]:
-					box(Vector3(0.08, 0.72, 0.08), Vector3(x + lx, 0.36, z + lz), wood, false)
-			mess.add_area(Vector3(x, 0.78, z), Vector2(2.5, 1.1), 0.1, 0.6)
-			# Unter dem Tisch kommt man mit dem Wedel nicht hin
-			no_floor_dust.append(Rect2(x - 1.35, z - 0.65, 2.7, 1.3))
+					box(Vector3(0.09, 0.72, 0.09), Vector3(x + lx, 0.36, z + lz), wood, false)
+			_add_desk_lamp(Vector3(x, 0.78, z))
+			for cx: float in [-0.65, 0.65]:
+				for side: float in [-1.0, 1.0]:
+					_add_chair(Vector3(x + cx, 0, z + side * 0.72), side)
+			var under_lamp: Array[Rect2] = [Rect2(x - 0.15, z - 0.12, 0.3, 0.24)]
+			mess.add_area(Vector3(x, 0.78, z), Vector2(2.5, 1.1), 0.1, 0.45, under_lamp)
+			# Unter dem Tisch und den Stühlen kommt man mit dem Wedel nicht hin
+			no_floor_dust.append(Rect2(x - 1.35, z - 1.05, 2.7, 2.1))
+
+
+## Grüne Bankierslampe mit kleinem warmem Licht.
+func _add_desk_lamp(pos: Vector3) -> void:
+	var brass := _brass()
+	var foot := MeshInstance3D.new()
+	var foot_mesh := CylinderMesh.new()
+	foot_mesh.top_radius = 0.06
+	foot_mesh.bottom_radius = 0.08
+	foot_mesh.height = 0.03
+	foot_mesh.material = brass
+	foot.mesh = foot_mesh
+	foot.position = pos + Vector3(0, 0.015, 0)
+	add_child(foot)
+	box(Vector3(0.018, 0.3, 0.018), pos + Vector3(0, 0.17, 0), brass, false)
+	var shade := MeshInstance3D.new()
+	var shade_mesh := CylinderMesh.new()
+	shade_mesh.top_radius = 0.075
+	shade_mesh.bottom_radius = 0.075
+	shade_mesh.height = 0.34
+	shade_mesh.material = _lib_mat_glow("lamp_green", Color(0.1, 0.42, 0.22), 0.9)
+	shade.mesh = shade_mesh
+	shade.position = pos + Vector3(0, 0.33, 0)
+	shade.rotation.z = PI * 0.5
+	shade.scale = Vector3(0.6, 1.0, 1.0)   # flacher, wie ein halber Zylinder
+	add_child(shade)
+	var light := OmniLight3D.new()
+	light.position = pos + Vector3(0, 0.24, 0)
+	light.light_color = Color(1.0, 0.85, 0.6)
+	light.light_energy = 0.9
+	light.omni_range = 2.2
+	light.light_volumetric_fog_energy = 0.0
+	add_child(light)
+
+
+## Stuhl mit Lehne. facing = +1: Sitzfläche zeigt nach -z (zum Tisch hin, wenn der Stuhl bei +z steht).
+func _add_chair(pos: Vector3, facing: float) -> void:
+	var wood := _lib_mat("table")
+	var cushion := mat("chair_cushion", Color(0.42, 0.1, 0.09), 0.85)
+	box(Vector3(0.46, 0.05, 0.44), pos + Vector3(0, 0.46, 0), wood)
+	box(Vector3(0.42, 0.04, 0.4), pos + Vector3(0, 0.505, 0), cushion, false)
+	for lx: float in [-0.2, 0.2]:
+		for lz: float in [-0.19, 0.19]:
+			box(Vector3(0.04, 0.44, 0.04), pos + Vector3(lx, 0.22, lz), wood, false)
+	var back_z := facing * 0.2
+	for lx: float in [-0.2, 0.2]:
+		box(Vector3(0.045, 0.5, 0.045), pos + Vector3(lx, 0.73, back_z), wood, false)
+	box(Vector3(0.44, 0.1, 0.035), pos + Vector3(0, 0.93, back_z), wood, false)
+	box(Vector3(0.3, 0.3, 0.025), pos + Vector3(0, 0.7, back_z), cushion, false)
 
 
 func _add_air_motes(hx: float) -> void:
@@ -517,19 +779,35 @@ func _add_air_motes(hx: float) -> void:
 	add_child(motes)
 
 
-func _floor_mat() -> StandardMaterial3D:
-	# Gestreiftes Rauschen sieht aus wie Holzmaserung. Glänzt, sobald der Staub weg ist.
-	var noise := FastNoiseLite.new()
-	noise.frequency = 0.03
-	var tex := NoiseTexture2D.new()
-	tex.noise = noise
-	tex.seamless = true
-	tex.width = 256
-	tex.height = 256
-	var m := StandardMaterial3D.new()
-	m.albedo_color = Color(0.62, 0.4, 0.24)
-	m.albedo_texture = tex
-	m.uv1_triplanar = true
-	m.uv1_scale = Vector3(0.15, 1.0, 2.0)
-	m.roughness = 0.35
+## Material aus materials.gd, einmal erzeugt und dann wiederverwendet.
+func _lib_mat(key: String) -> Material:
+	if not _lib_mats.has(key):
+		_lib_mats[key] = Materials.make(key)
+	return _lib_mats[key]
+
+
+func _lib_mat_glow(key: String, color: Color, energy: float) -> StandardMaterial3D:
+	if not _lib_mats.has(key):
+		_lib_mats[key] = Materials.glow(color, energy)
+	return _lib_mats[key]
+
+
+func _box_mesh(size: Vector3, material: Material) -> BoxMesh:
+	var m := BoxMesh.new()
+	m.size = size
+	m.material = material
 	return m
+
+
+func _part(parent: Node3D, mesh: Mesh, pos: Vector3) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	mi.position = pos
+	parent.add_child(mi)
+	return mi
+
+
+func _brass() -> Material:
+	if not _lib_mats.has("brass"):
+		_lib_mats["brass"] = Materials.metal(Color(0.78, 0.6, 0.3), 0.35)
+	return _lib_mats["brass"]

@@ -11,6 +11,7 @@ var _coins_label: Label
 var _rows: VBoxContainer
 var _books_label: Label
 var _close_button: Button
+var _title_font: Font
 
 
 func _ready() -> void:
@@ -18,9 +19,11 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	visible = false
 
+	_title_font = CleanTheme.title_font(state.config)
 	var overlay := ColorRect.new()
-	overlay.color = Color(0, 0, 0, 0.6)
+	overlay.color = Color(0.03, 0.02, 0.01, 0.7)
 	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.theme = CleanTheme.build(state.config)
 	add_child(overlay)
 
 	var center := CenterContainer.new()
@@ -28,14 +31,7 @@ func _ready() -> void:
 	overlay.add_child(center)
 
 	var panel := PanelContainer.new()
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.12, 0.08, 0.05, 0.95)
-	style.set_corner_radius_all(10)
-	style.set_content_margin_all(20)
-	style.border_color = Color(0.75, 0.58, 0.3)
-	style.set_border_width_all(2)
-	panel.add_theme_stylebox_override("panel", style)
-	panel.custom_minimum_size = Vector2(760, 0)
+	panel.custom_minimum_size = Vector2(820, 0)
 	center.add_child(panel)
 
 	var box := VBoxContainer.new()
@@ -44,10 +40,12 @@ func _ready() -> void:
 
 	var head := HBoxContainer.new()
 	box.add_child(head)
-	var title := _label(head, 32, "Upgrade-Laden")
+	var title := _label(head, 34, "Upgrade-Laden", true)
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_coins_label = _label(head, 26, "")
-	_coins_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
+	title.add_theme_color_override("font_color", state.config.ui_accent_color.lightened(0.25))
+	_coins_label = _label(head, 28, "", true)
+	_coins_label.add_theme_color_override("font_color", state.config.ui_accent_color.lightened(0.3))
+	box.add_child(HSeparator.new())
 
 	var scroll := ScrollContainer.new()
 	scroll.custom_minimum_size = Vector2(0, 440)
@@ -59,13 +57,15 @@ func _ready() -> void:
 	scroll.add_child(_rows)
 
 	box.add_child(HSeparator.new())
-	_books_title = _label(box, 22, "")
+	_books_title = _label(box, 22, "", true)
 	_books_label = _label(box, 16, "")
 
 	_close_button = Button.new()
 	_close_button.text = "Zurück (U)"
 	_close_button.custom_minimum_size = Vector2(0, 44)
 	_close_button.add_theme_font_size_override("font_size", 20)
+	if _title_font:
+		_close_button.add_theme_font_override("font", _title_font)
 	_close_button.pressed.connect(close)
 	box.add_child(_close_button)
 
@@ -92,22 +92,40 @@ func close() -> void:
 
 func refresh() -> void:
 	var config := state.config
-	_coins_label.text = "%d %s" % [state.coins, config.currency_name]
+	_coins_label.text = "%s %s" % [CleanHud._format_number(state.coins), config.currency_name]
 	for child in _rows.get_children():
 		child.queue_free()
+	var odd := false
 	for u in config.upgrades:
 		var level := state.level(u.id)
+		# Jede Zeile auf einer eigenen, abwechselnd getönten Leiste
+		var strip := PanelContainer.new()
+		var strip_style := StyleBoxFlat.new()
+		strip_style.bg_color = Color(1, 0.9, 0.7, 0.06 if odd else 0.025)
+		strip_style.set_corner_radius_all(6)
+		strip_style.set_content_margin_all(8)
+		strip.add_theme_stylebox_override("panel", strip_style)
+		_rows.add_child(strip)
+		odd = not odd
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 12)
-		_rows.add_child(row)
+		strip.add_child(row)
 
 		var text := VBoxContainer.new()
 		text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row.add_child(text)
 		var level_text := "Stufe %d / %d" % [level, u.max_level] if u.max_level > 1 else ""
-		_label(text, 20, "%s   %s" % [u.display_name, level_text])
+		var name_row := HBoxContainer.new()
+		name_row.add_theme_constant_override("separation", 14)
+		text.add_child(name_row)
+		_label(name_row, 20, u.display_name)
+		if level_text != "":
+			var level_label := _label(name_row, 15, level_text)
+			level_label.add_theme_color_override("font_color", config.ui_accent_color)
+			level_label.size_flags_vertical = Control.SIZE_SHRINK_END
 		var info := _label(text, 15, u.info)
-		info.modulate = Color(1, 1, 1, 0.75)
+		info.modulate = Color(1, 1, 1, 0.7)
+		info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 
 		var button := Button.new()
 		button.custom_minimum_size = Vector2(190, 40)
@@ -120,7 +138,7 @@ func refresh() -> void:
 				button.text = "Maximal" if u.max_level > 1 else "Gekauft"
 				button.disabled = true
 			var reason:
-				button.text = "Kaufen: %d" % u.cost(level)
+				button.text = "Kaufen: %s" % CleanHud._format_number(u.cost(level))
 				button.disabled = reason == "coins"
 				var id := u.id
 				button.pressed.connect(func() -> void: buy_requested.emit(id))
@@ -137,9 +155,11 @@ func refresh() -> void:
 	_books_label.text = "\n".join(lines)
 
 
-func _label(parent: Control, font_size: int, text: String) -> Label:
+func _label(parent: Control, font_size: int, text: String, title := false) -> Label:
 	var label := Label.new()
 	label.text = text
 	label.add_theme_font_size_override("font_size", font_size)
+	if title and _title_font:
+		label.add_theme_font_override("font", _title_font)
 	parent.add_child(label)
 	return label

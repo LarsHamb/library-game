@@ -12,6 +12,13 @@ extends Resource
 @export var collectible_group_name := "Fundstücke"
 @export var welcome_text := ""
 
+@export_group("Aussehen")
+@export_file("*.ttf", "*.otf") var ui_title_font := ""   # Überschriften, Münzen
+@export_file("*.ttf", "*.otf") var ui_body_font := ""    # alles andere
+@export var ui_text_color := Color(0.96, 0.92, 0.82)
+@export var ui_accent_color := Color(0.85, 0.66, 0.32)
+@export var ui_panel_color := Color(0.1, 0.07, 0.05, 0.86)
+
 @export_group("Grundwerte")
 ## Grundwerte, auf die Upgrades und Sammelobjekte wirken.
 @export var base_stats := {
