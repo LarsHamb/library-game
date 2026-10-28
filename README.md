@@ -5,14 +5,14 @@ und machst sie sauber. Erst per Hand mit dem Staubwedel, später immer schneller
 
 ## Was schon geht
 
-- Ein Saal: der **Große Lesesaal** mit Regalreihen, Lesetischen und einer riesigen Bücherwand
+- Drei Säle: der **Große Lesesaal**, das **Kartenarchiv** (rußiger Staub, 1,5× Münzen) und der **Kuppelsaal** (Goldstaub, 2,5× Münzen). Die Nebensäle öffnet man im Upgrade-Laden
 - Ein Werkzeug: der **Staubwedel** (linke Maustaste gedrückt halten)
 - Rund 30.000 Staubflocken auf Boden, Regalböden und Tischen. Dicker Staub braucht mehrere Durchgänge
 - **Leitern** an jedem Regal, um auch an die oberen (besonders staubigen) Böden zu kommen
 - Fortschritt in Prozent, **Münzen** pro Flocke (dicke Flocken bringen mehr), Boni bei 25 / 50 / 75 % und für den sauberen Saal
 - **Upgrade-Laden** (U) mit 7 Upgrades: Radius, Kraft, Reichweite, Tempo, Münzwert, Radar-Akku, Staubsauger
 - **Staubsauger** als zweites Werkzeug: schmal, stark, weit (Taste 1/2 oder Mausrad)
-- **5 seltene Bücher** unter dem Staub versteckt, jedes mit dauerhaftem Bonus. Sie glitzern leicht, das Radar zeigt sie mit Lichtsäulen
+- **7 seltene Bücher** unter dem Staub versteckt, jedes mit dauerhaftem Bonus. Sie glitzern leicht, das Radar zeigt sie mit Lichtsäulen
 - **Roboter**: Regal-Roboter fahren auf Schienen vor den Regalen und putzen alle Böden, Saug-Drohnen fliegen über die Regale und suchen selbst Staub. Dazu Upgrades für Tempo und Putzkraft aller Roboter
 - **Tempo-Anzeige**: Flocken pro Minute
 - **Speichern**: automatisch alle 30 Sekunden, beim Öffnen des Menüs und beim Beenden. „Neues Spiel“ im Menü
@@ -53,5 +53,4 @@ Die Welt wird komplett im Code erzeugt. Spielstand: `user://bibliothek_spielstan
 
 ## Ideen für die nächsten Schritte
 
-- Phase 4: Weitere Säle, die sich nach und nach öffnen
 - Phase 5: Musik, Lichtstrahlen, bessere Modelle, Export als .exe

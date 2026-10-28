@@ -11,10 +11,14 @@ extends Node3D
 ##   _make_collectible_model(def), _build_environment(), _tool_display_name(tool), _on_stats_applied()
 ##   _make_bot_model(kind)     Modell für Roboter (sonst einfache Standardmodelle)
 ## Roboter: Upgrades mit spawns_bot = "rail" oder "drone". Schienen legt die Welt mit add_rail() an.
+## Zonen: die erste Zone (config.zone_name) gibt es immer; weitere legt _build_world() mit add_zone() an,
+## Türen dazu mit add_door(). Freigeschaltet werden sie über Upgrades mit unlocks_zone.
 
 var config: CleanGameConfig
 var state: CleanGameState
-var mess: CleanMessField
+var mess: CleanMessField          # Schmutz der ersten Zone
+var zones: Array[CleanZone] = []
+var current_zone: CleanZone
 var player: CleanPlayer
 var hud: CleanHud
 var sfx: CleanSfx
@@ -81,6 +85,7 @@ func _spawn_bot(kind: String, index: int) -> CleanBot:
 			return bot
 		"drone":
 			var drone := CleanDrone.new()
+			drone.messes = _open_messes()
 			drone.position = config.player_start + Vector3(index * 0.8 - 2.0, 0, -2.0)
 			return drone
 	return null
@@ -119,10 +124,12 @@ func _ready() -> void:
 
 	world_body = StaticBody3D.new()
 	add_child(world_body)
-	mess = CleanMessField.new()
-	add_child(mess)
+	var main_zone := add_zone("main", config.zone_name, Rect2(-1e6, -1e6, 2e6, 2e6), config.complete_bonus)
+	mess = main_zone.mess
+	current_zone = main_zone
 	_build_world()
-	mess.build()
+	for z in zones:
+		z.mess.build()
 	# Nächste Schienen zuerst, damit die ersten Roboter in Sichtweite landen
 	_rails.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		return (a["from"] as Vector3).distance_to(config.player_start) < (b["from"] as Vector3).distance_to(config.player_start))
@@ -130,7 +137,6 @@ func _ready() -> void:
 	player = CleanPlayer.new()
 	player.position = config.player_start
 	player.rotation.y = config.player_start_yaw
-	player.mess_field = mess
 	add_child(player)
 	for t in config.tools:
 		player.add_tool(t, _make_tool_visual(t))
@@ -139,7 +145,8 @@ func _ready() -> void:
 
 	var loaded := _load_game()
 	_place_collectibles()
-	mess.flakes_removed.connect(_on_flakes_removed)
+	for z in zones:
+		z.mess.flakes_removed.connect(_on_flakes_removed.bind(z))
 	apply_stats()
 	_rate_buckets.resize(RATE_WINDOW)
 	_rate_buckets.fill(0)
@@ -157,7 +164,7 @@ func _ready() -> void:
 	add_child(shop)
 	_refresh_hud()
 	if loaded:
-		hud.toast("Willkommen zurück im %s!" % config.zone_name, 4.0)
+		hud.toast("Willkommen zurück!", 4.0)
 	elif config.welcome_text != "":
 		hud.toast(config.welcome_text, 5.0)
 
@@ -186,6 +193,10 @@ func _process(delta: float) -> void:
 			sfx.coin()
 		_popup_coins = 0
 		_popup_timer = 0.2
+	var here := zone_at(player.global_position)
+	if here != current_zone:
+		current_zone = here
+		_refresh_hud()
 	_radar_cooldown = maxf(0.0, _radar_cooldown - delta)
 	hud.set_radar(_radar_cooldown)
 	if _radar_time > 0.0:
@@ -202,7 +213,7 @@ func _process(delta: float) -> void:
 		var sum := 0
 		for n in _rate_buckets:
 			sum += n
-		hud.set_rate(roundi(sum * 60.0 / RATE_WINDOW))
+		hud.set_rate(roundi(sum * 60.0 / RATE_WINDOW), overall_percent())
 	_autosave_timer -= delta
 	if _autosave_timer <= 0.0:
 		_autosave_timer = AUTOSAVE_SECONDS
@@ -216,24 +227,25 @@ func _on_settings_changed(mouse_sensitivity: float, volume: float) -> void:
 
 # ================================================================ Spielstand
 
-func _on_flakes_removed(count: int, earned: int) -> void:
+func _on_flakes_removed(count: int, earned: int, zone: CleanZone) -> void:
 	_rate_buckets[RATE_WINDOW - 1] += count
-	earned = roundi(earned * state.stat("coin_mult"))
+	earned = roundi(earned * state.stat("coin_mult") * zone.value_mult)
 	state.coins += earned
 	_popup_coins += earned
-	var percent := mess.progress_percent()
+	var percent := zone.mess.progress_percent()
 	for m: int in config.milestones:
-		if percent >= m and not state.milestones_hit.has(m):
-			state.milestones_hit.append(m)
+		var key := "%s:%d" % [zone.id, m]
+		if percent >= m and not state.milestones_hit.has(key):
+			state.milestones_hit.append(key)
 			var bonus: int = config.milestones[m]
 			state.coins += bonus
-			hud.toast("%d %% geschafft! Bonus: +%d %s" % [m, bonus, config.currency_name])
+			hud.toast("%s: %d %% geschafft! Bonus: +%d %s" % [zone.display_name, m, bonus, config.currency_name])
 			sfx.jingle()
-	if not state.zone_done and percent >= config.complete_at:
-		state.zone_done = true
-		state.coins += config.complete_bonus
-		mess.clear_all()   # ruft diese Funktion erneut auf, zone_done verhindert eine Schleife
-		hud.toast("%s ist blitzsauber! Der letzte Rest fliegt davon.\nBonus: +%d %s" % [config.zone_name, config.complete_bonus, config.currency_name], 6.0)
+	if not state.zones_done.has(zone.id) and percent >= config.complete_at:
+		state.zones_done.append(zone.id)
+		state.coins += zone.complete_bonus
+		zone.mess.clear_all()   # ruft diese Funktion erneut auf, zones_done verhindert eine Schleife
+		hud.toast("%s ist blitzsauber! Der letzte Rest fliegt davon.\nBonus: +%d %s" % [zone.display_name, zone.complete_bonus, config.currency_name], 6.0)
 		sfx.jingle()
 	_refresh_hud()
 
@@ -248,6 +260,9 @@ func _buy(id: String) -> void:
 	if u.unlock_tool != "":
 		player.select_tool_by_id(u.unlock_tool)
 		hud.toast("%s freigeschaltet! Wechsle mit den Zifferntasten oder dem Mausrad." % u.display_name, 4.0)
+	if u.unlocks_zone != "":
+		hud.toast("Die Tür ist offen: %s!" % u.display_name, 4.0)
+		sfx.jingle()
 	shop.refresh()
 	_refresh_hud()
 
@@ -256,6 +271,7 @@ func _buy(id: String) -> void:
 func apply_stats() -> void:
 	for t in config.tools:
 		player.set_unlocked(t, state.is_tool_unlocked(t))
+	_apply_zone_locks()
 	player.set_stats(state.stat("radius"), state.stat("power"), state.stat("reach"), state.stat("speed"))
 	_sync_bots()
 	_on_stats_applied()
@@ -272,7 +288,9 @@ func _sync_bots() -> void:
 			var bot := _spawn_bot(u.spawns_bot, list.size())
 			if bot == null:
 				break
-			bot.mess = mess
+			bot.mess = zone_at(bot.rail_from if bot is CleanRailBot else bot.position).mess
+			if bot is CleanDrone:
+				(bot as CleanDrone).messes = _open_messes()
 			var model := _make_bot_model(u.spawns_bot)
 			if model:
 				bot.set_model(model)
@@ -282,6 +300,8 @@ func _sync_bots() -> void:
 		for bot: CleanBot in _bots[kind]:
 			bot.speed_mult = state.stat("bot_speed")
 			bot.power_mult = state.stat("bot_power")
+			if bot is CleanDrone:
+				(bot as CleanDrone).messes = _open_messes()
 
 
 func bot_count() -> int:
@@ -292,15 +312,14 @@ func bot_count() -> int:
 
 
 func _try_radar() -> void:
-	if state.zone_done:
-		return
 	if _radar_cooldown > 0.0:
 		hud.toast("Das Radar lädt noch %d Sekunden." % ceili(_radar_cooldown))
 		sfx.deny()
 		return
 	_radar_cooldown = maxf(3.0, state.stat("radar_cooldown"))
 	_radar_time = config.radar_duration
-	mess.highlight(config.radar_duration)
+	for m in _open_messes():
+		m.highlight(config.radar_duration)
 	for c in _collectibles:
 		c.show_beam(true)
 	if _collectibles.any(func(c: CleanCollectible) -> bool: return not c.found):
@@ -320,7 +339,7 @@ func _refresh_hud() -> void:
 		tool_text += "\n" + "  ".join(keys)
 	if bot_count() > 0:
 		tool_text += "\nRoboter im Einsatz: %d" % bot_count()
-	hud.set_values(mess.progress_percent(), state.coins, tool_text, state.affordable_count(), state.found.size())
+	hud.set_values(current_zone.display_name, current_zone.mess.progress_percent(), state.coins, tool_text, state.affordable_count(), state.found.size())
 
 
 # ================================================================ Sammelobjekte
@@ -367,7 +386,10 @@ func save_game() -> void:
 	data["version"] = 1
 	data["player"] = [player.position.x, player.position.y, player.position.z, player.rotation.y]
 	data["tool"] = player.tool.id if player.tool else ""
-	data["mess"] = mess.save_state()
+	var mess_states := {}
+	for z in zones:
+		mess_states[z.id] = z.mess.save_state()
+	data["mess"] = mess_states
 	var file := FileAccess.open(config.save_file, FileAccess.WRITE)
 	if file:
 		file.store_string(JSON.stringify(data))
@@ -385,7 +407,11 @@ func _load_game() -> bool:
 	if p.size() == 4:
 		player.position = Vector3(p[0], p[1], p[2])
 		player.rotation.y = p[3]
-	mess.load_state(str(data.get("mess", "")))
+	var saved_mess: Variant = data.get("mess", {})
+	if saved_mess is String:   # ältere Spielstände hatten nur eine Zone
+		saved_mess = {"main": saved_mess}
+	for z in zones:
+		z.mess.load_state(str((saved_mess as Dictionary).get(z.id, "")))
 	apply_stats()
 	player.select_tool_by_id(str(data.get("tool", "")))
 	return true
@@ -468,6 +494,86 @@ func mat(key: String, color: Color, roughness := 0.8) -> StandardMaterial3D:
 	m.roughness = roughness
 	_mats[key] = m
 	return m
+
+
+## Neue Zone mit eigenem Schmutzfeld. bounds = Grundfläche (x, z). Danach Schmutz mit zone.mess.add_area() verteilen.
+func add_zone(id: String, display_name: String, bounds: Rect2, complete_bonus: int, value_mult := 1.0, color := Color(0.68, 0.64, 0.57)) -> CleanZone:
+	var z := CleanZone.new()
+	z.id = id
+	z.display_name = display_name
+	z.bounds = bounds
+	z.complete_bonus = complete_bonus
+	z.value_mult = value_mult
+	z.mess = CleanMessField.new()
+	z.mess.base_color = color
+	add_child(z.mess)
+	zones.append(z)
+	return z
+
+
+## Tür einer gesperrten Zone: fester Quader mit Schild. Verschwindet, sobald die Zone offen ist.
+func add_door(zone: CleanZone, size: Vector3, pos: Vector3, material: Material, sign_text: String, sign_pos: Vector3) -> void:
+	var body := StaticBody3D.new()
+	body.position = pos
+	var shape := CollisionShape3D.new()
+	var box_shape := BoxShape3D.new()
+	box_shape.size = size
+	shape.shape = box_shape
+	body.add_child(shape)
+	var door := MeshInstance3D.new()
+	var door_mesh := BoxMesh.new()
+	door_mesh.size = size
+	door_mesh.material = material
+	door.mesh = door_mesh
+	body.add_child(door)
+	add_child(body)
+	zone.door_nodes.append(body)
+	var label := Label3D.new()
+	label.text = sign_text
+	label.position = sign_pos
+	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	label.font_size = 64
+	label.pixel_size = 0.004
+	label.outline_size = 12
+	label.modulate = Color(1.0, 0.9, 0.6)
+	add_child(label)
+	zone.door_nodes.append(label)
+
+
+## Die Zone, in der ein Punkt liegt (spätere Zonen gehen vor, die erste umfasst den Rest).
+func zone_at(p: Vector3) -> CleanZone:
+	for i in range(zones.size() - 1, -1, -1):
+		if zones[i].contains(p):
+			return zones[i]
+	return zones[0]
+
+
+func overall_percent() -> float:
+	var total := 0
+	var cleaned := 0
+	for z in zones:
+		total += z.mess.total
+		cleaned += z.mess.total - z.mess.remaining
+	return 100.0 * cleaned / maxi(total, 1)
+
+
+func _open_messes() -> Array[CleanMessField]:
+	var list: Array[CleanMessField] = []
+	for z in zones:
+		if z.unlocked:
+			list.append(z.mess)
+	return list
+
+
+func _apply_zone_locks() -> void:
+	for z in zones:
+		z.unlocked = state.is_zone_unlocked(z.id)
+		if z.unlocked:
+			for n in z.door_nodes:
+				n.queue_free()
+			z.door_nodes.clear()
+	var list := _open_messes()
+	player.mess_fields = list
 
 
 ## Schiene für einen Schienen-Roboter: Putzlinie von from bis to (y = Boden), Putzhöhen,

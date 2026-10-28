@@ -15,6 +15,7 @@ extends Resource
 @export var mult_per_level := 0.0
 @export var unlock_tool := ""       # Werkzeug-ID, die ab Stufe 1 freigeschaltet ist
 @export var spawns_bot := ""        # Roboter-Art ("rail", "drone" ...): jede Stufe = ein Roboter mehr
+@export var unlocks_zone := ""      # Zonen-ID, die mit dem Kauf geöffnet wird
 
 
 func cost(level: int) -> int:
@@ -34,6 +35,13 @@ static func make(p_id: String, p_name: String, p_info: String, p_cost: int, p_fa
 	u.add_per_level = p_add
 	u.mult_per_level = p_mult
 	u.unlock_tool = p_unlock
+	return u
+
+
+## Upgrade, das eine neue Zone öffnet.
+static func make_zone(p_id: String, p_name: String, p_info: String, p_cost: int, zone_id: String) -> CleanUpgrade:
+	var u := make(p_id, p_name, p_info, p_cost, 1.0, 1)
+	u.unlocks_zone = zone_id
 	return u
 
 

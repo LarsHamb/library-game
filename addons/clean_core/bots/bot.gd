@@ -14,10 +14,12 @@ func set_model(p_model: Node3D) -> void:
 	model = p_model
 
 
-func clean(point: Vector3, radius: float, power_per_second: float, delta: float) -> int:
-	if mess == null:
+func clean(point: Vector3, radius: float, power_per_second: float, delta: float, field: CleanMessField = null) -> int:
+	if field == null:
+		field = mess
+	if field == null:
 		return 0
-	return mess.clean_at(point, radius, power_per_second * power_mult * delta)
+	return field.clean_at(point, radius, power_per_second * power_mult * delta)
 
 
 static func simple_mat(color: Color, emissive := false) -> StandardMaterial3D:
