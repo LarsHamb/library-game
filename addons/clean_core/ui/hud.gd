@@ -1,3 +1,4 @@
+class_name CleanHud
 extends CanvasLayer
 ## Anzeige: Fortschritt der Zone, Münzen, Upgrade, Steuerung, Meldungen und das Pause-Menü.
 ## Läuft auch während der Pause weiter (process_mode = ALWAYS).
@@ -9,6 +10,7 @@ signal new_game_requested
 
 const SETTINGS_PATH := "user://settings.cfg"
 
+var config: CleanGameConfig   # vor add_child setzen
 var mouse_sensitivity := 0.0025
 var volume := 0.8
 
@@ -75,7 +77,7 @@ func _ready() -> void:
 
 	# Unten links: Steuerung
 	var help := _label(_root, 15)
-	help.text = "WASD laufen · Shift rennen · Leertaste springen · An Leitern: W hoch, S runter\nLinke Maustaste halten: putzen · 1 / 2 oder Mausrad: Werkzeug wechseln\nU: Upgrade-Laden · R: Staub-Radar · Esc: Menü"
+	help.text = "WASD laufen · Shift rennen · Leertaste springen · An Leitern: W hoch, S runter\nLinke Maustaste halten: putzen · Ziffern oder Mausrad: Werkzeug wechseln\nU: Upgrade-Laden · R: Radar · Esc: Menü"
 	help.modulate = Color(1, 1, 1, 0.75)
 	_anchor(help, 0.0, 1.0, 0.0, 1.0, 20, -90, 620, -20)
 
@@ -128,28 +130,29 @@ func close_menu() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
-func set_values(zone: String, percent: float, coins: int, tool_text: String, affordable: int, books_found: int, books_total: int) -> void:
-	_zone_label.text = "%s – %.1f %% entstaubt" % [zone, percent]
+func set_values(percent: float, coins: int, tool_text: String, affordable: int, found: int) -> void:
+	_zone_label.text = "%s – %.1f %% sauber" % [config.zone_name, percent]
 	_progress.value = percent
-	_coins_label.text = "%s Münzen" % _format_number(coins)
+	_coins_label.text = "%s %s" % [_format_number(coins), config.currency_name]
 	var text := "Werkzeug: %s\n" % tool_text
 	if affordable > 0:
 		text += "[U] Upgrade-Laden: %d Upgrade%s kaufbar!\n" % [affordable, "" if affordable == 1 else "s"]
 	else:
 		text += "[U] Upgrade-Laden\n"
-	text += "Seltene Bücher: %d / %d" % [books_found, books_total]
+	if not config.collectibles.is_empty():
+		text += "%s: %d / %d" % [config.collectible_group_name, found, config.collectibles.size()]
 	_upgrade_label.text = text
 
 
 func set_rate(flakes_per_minute: int) -> void:
-	_rate_label.text = "Tempo: %s Flocken pro Minute" % _format_number(flakes_per_minute)
+	_rate_label.text = "Tempo: %s %s pro Minute" % [_format_number(flakes_per_minute), config.flake_name]
 
 
 func set_radar(seconds_left: float) -> void:
 	if seconds_left <= 0.0:
-		_radar_label.text = "[R] Staub-Radar bereit"
+		_radar_label.text = "[R] %s-Radar bereit" % config.mess_name
 	else:
-		_radar_label.text = "Staub-Radar lädt … %d s" % ceili(seconds_left)
+		_radar_label.text = "%s-Radar lädt … %d s" % [config.mess_name, ceili(seconds_left)]
 
 
 func toast(message: String, duration := 2.5) -> void:
@@ -207,7 +210,7 @@ func _build_menu() -> void:
 	center.add_child(box)
 
 	var title := _label(box, 48)
-	title.text = "Bibliothek entstauben"
+	title.text = config.game_title
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 
 	_menu_button = _button(box, "Spielen")

@@ -1,11 +1,12 @@
+class_name CleanShop
 extends CanvasLayer
-## Upgrade-Laden: alle Upgrades mit Stufe, Wirkung und Preis, dazu die gefundenen seltenen Bücher.
-## Öffnet mit U, pausiert das Spiel solange.
+## Upgrade-Laden: alle Upgrades mit Stufe, Wirkung und Preis, dazu die gefundenen Sammelobjekte.
+## Öffnet mit U, pausiert das Spiel solange. Alles kommt aus dem Spielstand (CleanGameState).
 
 signal buy_requested(id: String)
 
-const Upgrades := preload("res://scripts/upgrades.gd")
-
+var state: CleanGameState
+var _books_title: Label
 var _coins_label: Label
 var _rows: VBoxContainer
 var _books_label: Label
@@ -53,11 +54,11 @@ func _ready() -> void:
 	box.add_child(_rows)
 
 	box.add_child(HSeparator.new())
-	_label(box, 22, "Seltene Bücher")
+	_books_title = _label(box, 22, "")
 	_books_label = _label(box, 16, "")
 
 	_close_button = Button.new()
-	_close_button.text = "Zurück zum Putzen (U)"
+	_close_button.text = "Zurück (U)"
 	_close_button.custom_minimum_size = Vector2(0, 44)
 	_close_button.add_theme_font_size_override("font_size", 20)
 	_close_button.pressed.connect(close)
@@ -70,8 +71,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
-func open(coins: int, levels: Dictionary, books_found: Array[String], vacuum_from_book: bool) -> void:
-	refresh(coins, levels, books_found, vacuum_from_book)
+func open() -> void:
+	refresh()
 	visible = true
 	get_tree().paused = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -84,14 +85,13 @@ func close() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
-func refresh(coins: int, levels: Dictionary, books_found: Array[String], vacuum_from_book: bool) -> void:
-	_coins_label.text = "%d Münzen" % coins
+func refresh() -> void:
+	var config := state.config
+	_coins_label.text = "%d %s" % [state.coins, config.currency_name]
 	for child in _rows.get_children():
 		child.queue_free()
-	for u: Dictionary in Upgrades.UPGRADES:
-		var id: String = u["id"]
-		var level: int = levels.get(id, 0)
-		var max_level: int = u["max"]
+	for u in config.upgrades:
+		var level := state.level(u.id)
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 12)
 		_rows.add_child(row)
@@ -99,33 +99,36 @@ func refresh(coins: int, levels: Dictionary, books_found: Array[String], vacuum_
 		var text := VBoxContainer.new()
 		text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row.add_child(text)
-		var level_text := "Stufe %d / %d" % [level, max_level] if max_level > 1 else ""
-		_label(text, 20, "%s   %s" % [u["name"], level_text])
-		var info := _label(text, 15, u["info"])
+		var level_text := "Stufe %d / %d" % [level, u.max_level] if u.max_level > 1 else ""
+		_label(text, 20, "%s   %s" % [u.display_name, level_text])
+		var info := _label(text, 15, u.info)
 		info.modulate = Color(1, 1, 1, 0.75)
 
 		var button := Button.new()
 		button.custom_minimum_size = Vector2(190, 40)
 		button.add_theme_font_size_override("font_size", 18)
-		if id == "vacuum" and vacuum_from_book:
-			button.text = "Durch Buch frei"
-			button.disabled = true
-		elif level >= max_level:
-			button.text = "Maximal"
-			button.disabled = true
-		else:
-			var price := Upgrades.cost(u, level)
-			button.text = "Kaufen: %d" % price
-			button.disabled = coins < price
-			button.pressed.connect(func() -> void: buy_requested.emit(id))
+		match state.buy_block_reason(u):
+			"found":
+				button.text = "Schon gefunden"
+				button.disabled = true
+			"max":
+				button.text = "Maximal" if u.max_level > 1 else "Gekauft"
+				button.disabled = true
+			var reason:
+				button.text = "Kaufen: %d" % u.cost(level)
+				button.disabled = reason == "coins"
+				var id := u.id
+				button.pressed.connect(func() -> void: buy_requested.emit(id))
 		row.add_child(button)
 
+	_books_title.text = config.collectible_group_name
+	_books_title.visible = not config.collectibles.is_empty()
 	var lines: Array[String] = []
-	for b: Dictionary in Upgrades.BOOKS:
-		if books_found.has(b["id"]):
-			lines.append("Gefunden: %s  (%s)" % [b["name"], b["perk"]])
+	for c in config.collectibles:
+		if state.has_found(c.id):
+			lines.append("Gefunden: %s  (%s)" % [c.display_name, c.perk_text])
 		else:
-			lines.append("???  Noch irgendwo unter dem Staub versteckt")
+			lines.append("???  Noch irgendwo versteckt")
 	_books_label.text = "\n".join(lines)
 
 

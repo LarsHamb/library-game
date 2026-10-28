@@ -1,29 +1,26 @@
+class_name CleanCollectible
 extends Node3D
-## Ein seltenes Buch, das irgendwo unter dem Staub liegt.
-## Man sieht es erst, wenn man darüber wedelt. Bis dahin verraten es nur kleine Glitzer-Funken.
+## Ein Sammelobjekt, das irgendwo unter dem Schmutz liegt.
+## Man sieht es erst, wenn man darüber putzt. Bis dahin verraten es nur kleine Glitzer-Funken.
+## Das Modell liefert das Spiel (set_model), sonst gibt es einen goldenen Würfel.
 
-var book_id := ""
+var def: CleanCollectibleDef
 var found := false
+var _model: Node3D
 
 var _beam: MeshInstance3D
 
 
 func _ready() -> void:
-	var book := MeshInstance3D.new()
-	var box := BoxMesh.new()
-	box.size = Vector3(0.24, 0.05, 0.17)
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.45, 0.08, 0.1)
-	mat.emission_enabled = true
-	mat.emission = Color(1.0, 0.75, 0.3)
-	mat.emission_energy_multiplier = 0.6
-	box.material = mat
-	book.mesh = box
-	book.position.y = 0.025
-	book.rotation.y = randf() * TAU
-	book.visible = false
-	book.name = "Book"
-	add_child(book)
+	if _model == null:
+		var cube := MeshInstance3D.new()
+		var box := BoxMesh.new()
+		box.size = Vector3(0.2, 0.2, 0.2)
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = Color(1.0, 0.8, 0.3)
+		box.material = mat
+		cube.mesh = box
+		set_model(cube)
 
 	# Glitzern: alle paar Sekunden ein paar goldene Funken
 	var sparkle := CPUParticles3D.new()
@@ -68,19 +65,25 @@ func _ready() -> void:
 	add_child(_beam)
 
 
+## Modell des Objekts (Ursprung = Unterseite). Ist bis zum Finden unsichtbar.
+func set_model(model: Node3D) -> void:
+	_model = model
+	_model.visible = false
+	add_child(_model)
+
+
 func show_beam(on: bool) -> void:
 	_beam.visible = on and not found
 
 
-## Buch taucht auf, schwebt drehend hoch und verschwindet.
+## Objekt taucht auf, schwebt drehend hoch und verschwindet.
 func reveal() -> void:
 	found = true
 	_beam.visible = false
 	get_node("Sparkle").emitting = false
-	var book: MeshInstance3D = get_node("Book")
-	book.visible = true
+	_model.visible = true
 	var tween := create_tween()
-	tween.tween_property(book, "position:y", 1.0, 1.2).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_BACK)
-	tween.parallel().tween_property(book, "rotation:y", book.rotation.y + TAU * 2.0, 1.2)
-	tween.tween_property(book, "scale", Vector3.ZERO, 0.3)
+	tween.tween_property(_model, "position:y", 1.0, 1.2).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_BACK)
+	tween.parallel().tween_property(_model, "rotation:y", _model.rotation.y + TAU * 2.0, 1.2)
+	tween.tween_property(_model, "scale", Vector3.ZERO, 0.3)
 	tween.tween_callback(queue_free)

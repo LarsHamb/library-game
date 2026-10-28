@@ -1,3 +1,4 @@
+class_name CleanSfx
 extends Node
 ## Alle Geräusche werden beim Start per Code erzeugt – es braucht keine Audiodateien.
 ## Später kann man sie einfach gegen echte Aufnahmen tauschen.
@@ -33,8 +34,8 @@ func _ready() -> void:
 
 ## Putzgeräusch: Wedel rauscht nur, wenn er Staub erwischt.
 ## Der Sauger brummt, solange die Taste gedrückt ist, und wird lauter, wenn er Staub einsaugt.
-func set_cleaning(held: bool, hitting_dust: bool, vacuum: bool) -> void:
-	if vacuum:
+func set_cleaning(held: bool, hitting_dust: bool, suck: bool) -> void:
+	if suck:
 		_swish_target = 0.0
 		_hum_target = (0.6 if held else 0.0) + (0.4 if hitting_dust else 0.0)
 	else:
@@ -42,7 +43,7 @@ func set_cleaning(held: bool, hitting_dust: bool, vacuum: bool) -> void:
 		_swish_target = 1.0 if hitting_dust else 0.0
 
 
-func book_found() -> void:
+func found_collectible() -> void:
 	_book.play()
 
 
