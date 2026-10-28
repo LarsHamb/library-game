@@ -16,6 +16,7 @@ extends Node3D
 ## Roboter: Upgrades mit spawns_bot = "rail" oder "drone". Schienen legt die Welt mit add_rail() an.
 ## Zonen: die erste Zone (config.zone_name) gibt es immer; weitere legt _build_world() mit add_zone() an,
 ## Türen dazu mit add_door(). Freigeschaltet werden sie über Upgrades mit unlocks_zone.
+## Zusatz-Schmutz mit eigenem Werkzeug (z.B. Spinnweben): add_mess_layer(). Karte (M): config.zone_bounds setzen.
 
 var config: CleanGameConfig
 var state: CleanGameState
@@ -26,6 +27,7 @@ var player: CleanPlayer
 var hud: CleanHud
 var sfx: CleanSfx
 var shop: CleanShop
+var map: CleanMap
 var world_body: StaticBody3D   # sammelt alle Kollisionsformen der Welt (siehe box/add_collider)
 var environment: Environment   # von _build_environment() gesetzt
 var music: AudioStreamPlayer
@@ -44,6 +46,10 @@ var _popup_timer := 0.0
 var _rate_buckets: Array[int] = []
 var _rate_timer := 0.0
 var _autosave_timer := AUTOSAVE_SECONDS
+var _regrow_timer := 10.0
+var _wrong_tool_cooldown := 0.0
+var _offline_coins := 0
+var _offline_minutes := 0
 
 
 # ================================================================ Für das konkrete Spiel
@@ -142,11 +148,14 @@ func _ready() -> void:
 	world_body = StaticBody3D.new()
 	add_child(world_body)
 	var main_zone := add_zone("main", config.zone_name, Rect2(-1e6, -1e6, 2e6, 2e6), config.complete_bonus)
+	main_zone.spawn = config.player_start
+	main_zone.spawn_yaw = config.player_start_yaw
 	mess = main_zone.mess
 	current_zone = main_zone
 	_build_world()
 	for z in zones:
-		z.mess.build()
+		for m in z.all_messes():
+			m.build()
 	# Nächste Schienen zuerst, damit die ersten Roboter in Sichtweite landen
 	_rails.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		return (a["from"] as Vector3).distance_to(config.player_start) < (b["from"] as Vector3).distance_to(config.player_start))
@@ -159,11 +168,13 @@ func _ready() -> void:
 		player.add_tool(t, _make_tool_visual(t))
 	player.swept.connect(_on_swept)
 	player.tool_changed.connect(func(_t: CleanTool) -> void: _refresh_hud())
+	player.wrong_tool.connect(_on_wrong_tool)
 
 	var loaded := _load_game()
 	_place_collectibles()
 	for z in zones:
-		z.mess.flakes_removed.connect(_on_flakes_removed.bind(z))
+		for m in z.all_messes():
+			m.flakes_removed.connect(_on_flakes_removed.bind(z))
 	apply_stats()
 	_rate_buckets.resize(RATE_WINDOW)
 	_rate_buckets.fill(0)
@@ -186,8 +197,14 @@ func _ready() -> void:
 	shop.state = state
 	shop.buy_requested.connect(_buy)
 	add_child(shop)
+	map = CleanMap.new()
+	map.game = self
+	map.travel_requested.connect(travel_to)
+	add_child(map)
 	_refresh_hud()
-	if loaded:
+	if loaded and _offline_coins > 0:
+		hud.toast("Willkommen zurück! Deine Roboter haben in %s\n%d %s verdient." % [_duration_text(_offline_minutes), _offline_coins, config.currency_name], 6.0)
+	elif loaded:
 		hud.toast("Willkommen zurück!", 4.0)
 	elif config.welcome_text != "":
 		hud.toast(config.welcome_text, 5.0)
@@ -201,6 +218,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed("radar"):
 		_try_radar()
+	elif event.is_action_pressed("open_map") and config.zone_bounds.has_area():
+		map.open()
+		get_viewport().set_input_as_handled()
 
 
 func _notification(what: int) -> void:
@@ -244,6 +264,16 @@ func _process(delta: float) -> void:
 	if _autosave_timer <= 0.0:
 		_autosave_timer = AUTOSAVE_SECONDS
 		save_game()
+	_wrong_tool_cooldown = maxf(0.0, _wrong_tool_cooldown - delta)
+	# Staub legt sich neu, sobald Roboter da sind, damit sie dauerhaft Arbeit haben
+	_regrow_timer -= delta
+	if _regrow_timer <= 0.0:
+		_regrow_timer = 10.0
+		if bot_count() > 0:
+			for z in zones:
+				if z.unlocked:
+					z.mess.regrow(roundi(z.mess.total * config.regrow_per_minute / 6.0))
+			_refresh_hud()
 
 
 func _on_settings_changed(mouse_sensitivity: float, volume: float) -> void:
@@ -294,6 +324,11 @@ func _screenshot_tour() -> void:
 	await _tour_wait(0.6)
 	_tour_shot(dir, "02_laden")
 	shop.close()
+	if config.zone_bounds.has_area():
+		map.open()
+		await _tour_wait(0.6)
+		_tour_shot(dir, "02_karte")
+		map.close()
 	var cam := Camera3D.new()
 	cam.fov = 72.0
 	cam.near = 0.05
@@ -455,6 +490,14 @@ func _sync_bots() -> void:
 				(bot as CleanDrone).messes = _open_messes()
 
 
+func all_bots() -> Array[Node3D]:
+	var list: Array[Node3D] = []
+	for kind: String in _bots:
+		for bot: Node3D in _bots[kind]:
+			list.append(bot)
+	return list
+
+
 func bot_count() -> int:
 	var n := 0
 	for kind: String in _bots:
@@ -469,7 +512,7 @@ func _try_radar() -> void:
 		return
 	_radar_cooldown = maxf(3.0, state.stat("radar_cooldown"))
 	_radar_time = config.radar_duration
-	for m in _open_messes():
+	for m in player.mess_fields:   # alle offenen Schichten, auch Spinnweben
 		m.highlight(config.radar_duration)
 	for c in _collectibles:
 		c.show_beam(true)
@@ -490,6 +533,9 @@ func _refresh_hud() -> void:
 		tool_text += "\n" + "  ".join(keys)
 	if bot_count() > 0:
 		tool_text += "\nRoboter im Einsatz: %d" % bot_count()
+	for layer in current_zone.layers:
+		if layer.remaining > 0:
+			tool_text += "\n%s: %d übrig" % [layer.display_name, layer.remaining]
 	hud.set_values(current_zone.display_name, current_zone.mess.progress_percent(), state.coins, tool_text, state.affordable_count(), state.found.size())
 
 
@@ -540,7 +586,10 @@ func save_game() -> void:
 	var mess_states := {}
 	for z in zones:
 		mess_states[z.id] = z.mess.save_state()
+		for k in z.layers.size():
+			mess_states["%s:%d" % [z.id, k]] = z.layers[k].save_state()
 	data["mess"] = mess_states
+	data["saved_at"] = Time.get_unix_time_from_system()
 	var file := FileAccess.open(config.save_file, FileAccess.WRITE)
 	if file:
 		file.store_string(JSON.stringify(data))
@@ -563,7 +612,17 @@ func _load_game() -> bool:
 		saved_mess = {"main": saved_mess}
 	for z in zones:
 		z.mess.load_state(str((saved_mess as Dictionary).get(z.id, "")))
+		for k in z.layers.size():
+			z.layers[k].load_state(str((saved_mess as Dictionary).get("%s:%d" % [z.id, k], "")))
 	apply_stats()
+	# Offline-Verdienst der Roboter
+	var saved_at := float(data.get("saved_at", 0.0))
+	if saved_at > 0.0 and bot_count() > 0:
+		var minutes := clampf((Time.get_unix_time_from_system() - saved_at) / 60.0, 0.0, config.offline_max_hours * 60.0)
+		if minutes >= 1.0:
+			_offline_minutes = floori(minutes)
+			_offline_coins = roundi(minutes * bot_count() * config.offline_coins_per_bot_minute * state.stat("bot_power") * state.stat("coin_mult"))
+			state.coins += _offline_coins
 	player.select_tool_by_id(str(data.get("tool", "")))
 	return true
 
@@ -591,6 +650,7 @@ func _setup_input() -> void:
 	_add_key_action("jump", [KEY_SPACE])
 	_add_key_action("open_shop", [KEY_U, KEY_TAB])
 	_add_key_action("radar", [KEY_R])
+	_add_key_action("open_map", [KEY_M])
 	for n in range(1, 10):
 		_add_key_action("tool_%d" % n, [KEY_0 + n])
 	if not InputMap.has_action("clean"):
@@ -662,6 +722,51 @@ func add_zone(id: String, display_name: String, bounds: Rect2, complete_bonus: i
 	return z
 
 
+## Zusätzlicher Schmutz in einer Zone mit eigenem Aussehen, z.B. Spinnweben, die nur ein bestimmtes
+## Werkzeug entfernt. Flocken danach mit layer.add_flake_at() oder layer.add_area() verteilen.
+func add_mess_layer(zone: CleanZone, display_name: String, required_tool: String, color: Color, coin_mult: float, shader: Shader = null) -> CleanMessField:
+	var layer := CleanMessField.new()
+	layer.display_name = display_name
+	layer.required_tool = required_tool
+	layer.base_color = color
+	layer.coin_mult = coin_mult
+	layer.flake_shader = shader
+	add_child(layer)
+	zone.layers.append(layer)
+	return layer
+
+
+## Bringt die Spielfigur in eine offene Zone (Klick auf der Karte).
+func travel_to(zone: CleanZone) -> void:
+	player.global_position = zone.spawn_point()
+	player.rotation.y = zone.spawn_yaw
+	player.velocity = Vector3.ZERO
+	sfx.upgrade()
+	hud.toast(zone.display_name, 2.0)
+
+
+func _on_wrong_tool(layer: CleanMessField) -> void:
+	if _wrong_tool_cooldown > 0.0:
+		return
+	_wrong_tool_cooldown = 4.0
+	var tool_name := layer.required_tool
+	var unlocked := false
+	for t in config.tools:
+		if t.id == layer.required_tool:
+			tool_name = t.display_name
+			unlocked = player.is_unlocked(t)
+	if unlocked:
+		hud.toast("%s gehen nur mit dem %s weg (Taste wechseln)." % [layer.display_name, tool_name], 3.0)
+	else:
+		hud.toast("%s gehen nur mit dem %s weg.\nDen gibt es im Upgrade-Laden." % [layer.display_name, tool_name], 3.5)
+
+
+static func _duration_text(minutes: int) -> String:
+	if minutes < 60:
+		return "%d Minuten" % minutes
+	return "%d h %d min" % [minutes / 60, minutes % 60]
+
+
 ## Tür einer gesperrten Zone: fester Quader mit Schild. Verschwindet, sobald die Zone offen ist.
 func add_door(zone: CleanZone, size: Vector3, pos: Vector3, material: Material, sign_text: String, sign_pos: Vector3) -> void:
 	var body := StaticBody3D.new()
@@ -723,7 +828,10 @@ func _apply_zone_locks() -> void:
 			for n in z.door_nodes:
 				n.queue_free()
 			z.door_nodes.clear()
-	var list := _open_messes()
+	var list: Array[CleanMessField] = []
+	for z in zones:
+		if z.unlocked:
+			list.append_array(z.all_messes())
 	player.mess_fields = list
 
 

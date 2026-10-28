@@ -14,6 +14,7 @@ static func create() -> CleanGameConfig:
 	c.welcome_text = "Willkommen im Großen Lesesaal! Halte die linke Maustaste gedrückt, um Staub zu wedeln."
 	c.player_start = Vector3(0, 0.05, 12.0)
 	c.save_file = "user://bibliothek_spielstand.json"
+	c.zone_bounds = Rect2(-11.0, -14.0, 22.0, 28.0)   # Grundfläche des Lesesaals für die Karte
 	c.ui_title_font = "res://game/library/fonts/Cinzel.ttf"
 	c.ui_body_font = "res://game/library/fonts/Lora.ttf"
 	c.music_file = "res://game/library/audio/musik.ogg"
@@ -22,6 +23,8 @@ static func create() -> CleanGameConfig:
 	c.tools.assign([
 		CleanTool.make("duster", "Staubwedel", 1, CleanTool.Style.SWEEP),
 		CleanTool.make("vacuum", "Staubsauger", 2, CleanTool.Style.SUCK, 0.6, 3.0, 1.4, false),
+		# Langer Besen für Spinnweben unter der Decke; für normalen Staub eher schwach
+		CleanTool.make("web_broom", "Spinnwebenbesen", 3, CleanTool.Style.SWEEP, 1.3, 0.6, 2.2, false),
 	])
 
 	# make(id, Name, Beschreibung, Preis, Preisfaktor pro Stufe, max. Stufe, Wert, +pro Stufe, ×pro Stufe, Werkzeug)
@@ -33,6 +36,7 @@ static func create() -> CleanGameConfig:
 		CleanUpgrade.make("value", "Staubhändler", "+25 % Münzen pro Flocke", 300, 2.1, 6, "coin_mult", 0.0, 0.25),
 		CleanUpgrade.make("radar", "Radar-Akku", "Radar lädt 3,5 s schneller", 200, 2.0, 4, "radar_cooldown", -3.5),
 		CleanUpgrade.make("vacuum", "Staubsauger", "Zweites Werkzeug: schmaler, aber 3× so stark und mit mehr Reichweite", 2500, 1.0, 1, "", 0.0, 0.0, "vacuum"),
+		CleanUpgrade.make("web_broom", "Spinnwebenbesen", "Langer Besen bis unter die Decke: nur damit gehen Spinnweben weg, jede bringt viele Münzen", 1500, 1.0, 1, "", 0.0, 0.0, "web_broom"),
 		# Automatisierung: jede Stufe = ein Roboter mehr
 		CleanUpgrade.make_bot("rail_bot", "Regal-Roboter", "Fährt an einem Regal entlang und putzt alle Böden auf einmal", 400, 1.22, 32, "rail"),
 		CleanUpgrade.make_bot("drone", "Saug-Drohne", "Fliegt über die Regale und saugt selbst Staub auf Boden und Tischen", 600, 1.5, 8, "drone"),

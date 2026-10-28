@@ -4,6 +4,7 @@ extends CleanGame
 
 const LibraryConfig := preload("res://game/library/library_config.gd")
 const Materials := preload("res://game/library/materials.gd")
+const COBWEB := preload("res://game/library/shaders/cobweb.gdshader")
 
 # --- Raum ---
 const HALL_SIZE := Vector2(22.0, 28.0)   # Breite (x) und Länge (z) in Metern
@@ -59,11 +60,14 @@ func _build_world() -> void:
 	_build_dome()
 	_build_books()
 	_add_air_motes(HALL_SIZE.x * 0.5)
+	_build_cobwebs()
 
 
 func _make_tool_visual(tool: CleanTool) -> Node3D:
 	if tool.id == "vacuum":
 		return _make_vacuum()
+	if tool.id == "web_broom":
+		return _make_web_broom()
 	return _make_duster()
 
 
@@ -164,6 +168,43 @@ func _make_duster() -> Node3D:
 		feather.position = feather.basis * Vector3(0, 0.055, 0) + Vector3(cos(angle), 0, sin(angle)) * 0.01
 		head.add_child(feather)
 	return duster
+
+
+## Langer Stiel mit runder, flauschiger Bürste – reicht bis unter die Decke.
+func _make_web_broom() -> Node3D:
+	var broom := Node3D.new()
+	broom.rotation = Vector3(-0.95, 0.0, -0.18)   # steiler nach oben als der Wedel
+	var pole := MeshInstance3D.new()
+	var stick := CylinderMesh.new()
+	stick.top_radius = 0.01
+	stick.bottom_radius = 0.013
+	stick.height = 0.9
+	stick.material = _lib_mat("table")
+	pole.mesh = stick
+	pole.position.y = 0.25
+	broom.add_child(pole)
+	var head := Node3D.new()
+	head.name = "Head"
+	head.position.y = 0.72
+	head.scale = Vector3(1.0, 1.5, 1.0)
+	broom.add_child(head)
+	var brush := MeshInstance3D.new()
+	var ball := SphereMesh.new()
+	ball.radius = 0.08
+	ball.height = 0.11
+	ball.material = mat("web_broom_bristles", Color(0.22, 0.2, 0.18), 1.0)
+	brush.mesh = ball
+	head.add_child(brush)
+	var cap := MeshInstance3D.new()
+	var ring := CylinderMesh.new()
+	ring.top_radius = 0.03
+	ring.bottom_radius = 0.02
+	ring.height = 0.04
+	ring.material = _brass()
+	cap.mesh = ring
+	cap.position.y = -0.05
+	head.add_child(cap)
+	return broom
 
 
 func _make_vacuum() -> Node3D:
@@ -403,7 +444,7 @@ func _build_hall() -> void:
 		box(Vector3(0.3, WALL_HEIGHT, front_len), Vector3(x, WALL_HEIGHT * 0.5, hz - front_len * 0.5), wall)
 		box(Vector3(0.3, WALL_HEIGHT - DOOR_H, DOOR_W), Vector3(x, DOOR_H + (WALL_HEIGHT - DOOR_H) * 0.5, DOOR_Z), wall)
 	box(Vector3(HALL_SIZE.x + 0.6, 0.3, HALL_SIZE.y + 0.6), Vector3(0, WALL_HEIGHT + 0.15, 0),
-		_lib_mat("ceiling"), false)
+		_lib_mat("ceiling"))   # mit Kollision, damit der Besen die Spinnweben an der Decke trifft
 
 
 # ================================================================ Nebensäle
@@ -411,6 +452,8 @@ func _build_hall() -> void:
 ## Kartenarchiv links: niedrige Decke, Kartenschränke, Globen, rußiger Staub (1,5× Münzen).
 func _build_archive() -> void:
 	var zone := add_zone("archive", "Kartenarchiv", Rect2(-27.0, -2.0, 16.0, 16.0), 8000, 1.5, Color(0.5, 0.47, 0.44))
+	zone.spawn = Vector3(-12.3, 0.05, DOOR_Z)
+	zone.spawn_yaw = PI * 0.5   # Blick in den Saal (nach -x)
 	var cx := -19.0
 	var cz := 6.0
 	var size := Vector2(16.0, 16.0)
@@ -477,6 +520,8 @@ func _build_archive() -> void:
 ## Kuppelsaal rechts: hohe Glaskuppel, Statuen, ein großer Lesetisch und Goldstaub (2,5× Münzen).
 func _build_dome() -> void:
 	var zone := add_zone("dome", "Kuppelsaal", Rect2(11.0, -2.0, 18.0, 16.0), 25000, 2.5, Color(0.86, 0.73, 0.42))
+	zone.spawn = Vector3(12.3, 0.05, DOOR_Z)
+	zone.spawn_yaw = -PI * 0.5
 	zone.mess.thick_darken = 0.04
 	var cx := 20.0
 	var cz := 6.0
@@ -570,7 +615,7 @@ func _build_room(center: Vector3, size: Vector2, height: float, side: float, flo
 	box(Vector3(0.3, height, size.y), Vector3(center.x + side * (size.x * 0.5 + 0.15), height * 0.5, center.z), wall)
 	box(Vector3(size.x, height, 0.3), Vector3(center.x, height * 0.5, center.z - size.y * 0.5 - 0.15), wall)
 	box(Vector3(size.x, height, 0.3), Vector3(center.x, height * 0.5, center.z + size.y * 0.5 + 0.15), wall)
-	box(Vector3(size.x + 0.6, 0.3, size.y + 0.6), Vector3(center.x, height + 0.15, center.z), ceiling, false)
+	box(Vector3(size.x + 0.6, 0.3, size.y + 0.6), Vector3(center.x, height + 0.15, center.z), ceiling)
 
 
 func _add_lamp(pos: Vector3, color: Color, energy: float, light_range: float, shadow: bool) -> void:
@@ -763,6 +808,56 @@ func _add_chair(pos: Vector3, facing: float) -> void:
 		box(Vector3(0.045, 0.5, 0.045), pos + Vector3(lx, 0.73, back_z), wood, false)
 	box(Vector3(0.44, 0.1, 0.035), pos + Vector3(0, 0.93, back_z), wood, false)
 	box(Vector3(0.3, 0.3, 0.025), pos + Vector3(0, 0.7, back_z), cushion, false)
+
+
+## Spinnweben unter der Decke von Lesesaal und Kartenarchiv: in Ecken, an den Wänden und an den
+## Aufhängungen der Kronleuchter. Nur der Spinnwebenbesen kommt dran, dafür bringt jede viele Münzen.
+func _build_cobwebs() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 314
+	var color := Color(0.86, 0.85, 0.82)
+	var hall := add_mess_layer(zones[0], "Spinnweben", "web_broom", color, 20.0, COBWEB)
+	var hx := HALL_SIZE.x * 0.5 - 0.5
+	var hz := HALL_SIZE.y * 0.5 - 0.5
+	var y := WALL_HEIGHT - 0.015
+	for sx: float in [-1.0, 1.0]:
+		for sz: float in [-1.0, 1.0]:
+			hall.add_flake_at(Vector3(sx * hx, y, sz * hz), 2.6, 3.0)
+			hall.add_flake_at(Vector3(sx * (hx - 1.1), y, sz * (hz - 0.2)), 1.8, 2.5)
+	var z := -hz + 2.0
+	while z < hz - 1.5:
+		for sx: float in [-1.0, 1.0]:
+			if rng.randf() < 0.55:
+				hall.add_flake_at(Vector3(sx * hx, y, z + rng.randf_range(-0.6, 0.6)), rng.randf_range(1.5, 2.2), rng.randf_range(1.8, 3.0))
+		z += 2.6
+	var x := -hx + 2.0
+	while x < hx - 1.5:
+		for sz: float in [-1.0, 1.0]:
+			if rng.randf() < 0.5:
+				hall.add_flake_at(Vector3(x + rng.randf_range(-0.6, 0.6), y, sz * hz), rng.randf_range(1.5, 2.2), rng.randf_range(1.8, 3.0))
+		x += 2.6
+	for cx: float in [-6.5, 0.0, 6.5]:
+		for cz: float in [-11.0, -3.0, 5.0, 11.0]:
+			if rng.randf() < 0.6:
+				hall.add_flake_at(Vector3(cx + rng.randf_range(-0.5, 0.5), y, cz + rng.randf_range(-0.5, 0.5)), 1.6, 2.0)
+
+	var archive_zone: CleanZone = null
+	for zz in zones:
+		if zz.id == "archive":
+			archive_zone = zz
+	if archive_zone == null:
+		return
+	var archive := add_mess_layer(archive_zone, "Spinnweben", "web_broom", color.darkened(0.15), 20.0, COBWEB)
+	var ay := 4.5 - 0.015
+	var r := archive_zone.bounds.grow(-0.5)
+	for corner: Vector2 in [r.position, Vector2(r.end.x, r.position.y), Vector2(r.position.x, r.end.y), r.end]:
+		archive.add_flake_at(Vector3(corner.x, ay, corner.y), 2.4, 3.0)
+	for i in 10:
+		var on_x := rng.randf() < 0.5
+		var p := Vector2(rng.randf_range(r.position.x, r.end.x), r.position.y if rng.randf() < 0.5 else r.end.y)
+		if on_x:
+			p = Vector2(r.position.x, rng.randf_range(r.position.y, r.end.y))
+		archive.add_flake_at(Vector3(p.x, ay, p.y), rng.randf_range(1.4, 2.0), rng.randf_range(1.8, 3.0))
 
 
 func _add_air_motes(hx: float) -> void:

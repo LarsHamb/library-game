@@ -120,7 +120,7 @@ func _ready() -> void:
 
 	# Unten links: Steuerung (blendet sich nach einer Weile aus, F1 holt sie zurück)
 	_help = _label(_root, 15)
-	_help.text = "WASD laufen · Shift rennen · Leertaste springen · An Leitern: W hoch, S runter\nLinke Maustaste halten: putzen · Ziffern oder Mausrad: Werkzeug wechseln\nU: Upgrade-Laden · R: Radar · Esc: Menü · F1: diese Hilfe"
+	_help.text = "WASD laufen · Shift rennen · Leertaste springen · An Leitern: W hoch, S runter\nLinke Maustaste halten: putzen · Ziffern oder Mausrad: Werkzeug wechseln\nU: Upgrade-Laden · R: Radar · M: Karte · Esc: Menü · F1: diese Hilfe"
 	_help.modulate = Color(1, 1, 1, 0.8)
 	_anchor(_help, 0.0, 1.0, 0.0, 1.0, 22, -90, 720, -20)
 	_fade_help(HELP_SECONDS)
