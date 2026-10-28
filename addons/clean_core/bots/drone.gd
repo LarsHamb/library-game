@@ -10,7 +10,9 @@ const RADIUS := 0.7
 var altitude := 3.6          # Flughöhe, über den Regalen
 var max_target_height := 1.0 # nur Schmutz bis zu dieser Höhe anfliegen
 
+var messes: Array[CleanMessField] = []   # alle Schmutzfelder, die die Drohne anfliegen darf
 var _target := Vector3.INF
+var _target_mess: CleanMessField
 var _rotors: Array[Node3D] = []
 var _beam: MeshInstance3D
 var _rng := RandomNumberGenerator.new()
@@ -77,6 +79,22 @@ func _default_model() -> Node3D:
 	return root
 
 
+func _find_target() -> void:
+	_target = Vector3.INF
+	var best_d := INF
+	var fields: Array[CleanMessField] = messes.duplicate()
+	if fields.is_empty() and mess:
+		fields.append(mess)
+	for field in fields:
+		if field == null:
+			continue
+		var p := field.find_mess_near(global_position, max_target_height, _rng)
+		if p.is_finite() and p.distance_squared_to(global_position) < best_d:
+			best_d = p.distance_squared_to(global_position)
+			_target = p
+			_target_mess = field
+
+
 func _process(delta: float) -> void:
 	for r in _rotors:
 		r.rotate_y(delta * 40.0)
@@ -87,7 +105,7 @@ func _process(delta: float) -> void:
 		_beam.visible = false
 		if _search_timer <= 0.0:
 			_search_timer = 1.0
-			_target = mess.find_mess_near(global_position, max_target_height, _rng) if mess else Vector3.INF
+			_find_target()
 		return
 
 	var flat_target := Vector3(_target.x, altitude, _target.z)
@@ -104,7 +122,7 @@ func _process(delta: float) -> void:
 		var h := altitude - _target.y
 		_beam.global_position = below + Vector3.UP * h * 0.5
 		_beam.scale = Vector3(1.0, h, 1.0)
-		if clean(below, RADIUS, BASE_POWER, delta) == 0:
+		if clean(below, RADIUS, BASE_POWER, delta, _target_mess) == 0:
 			_target = Vector3.INF
 	else:
 		_beam.visible = false

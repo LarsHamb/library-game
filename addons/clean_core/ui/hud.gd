@@ -130,8 +130,8 @@ func close_menu() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
-func set_values(percent: float, coins: int, tool_text: String, affordable: int, found: int) -> void:
-	_zone_label.text = "%s – %.1f %% sauber" % [config.zone_name, percent]
+func set_values(zone_name: String, percent: float, coins: int, tool_text: String, affordable: int, found: int) -> void:
+	_zone_label.text = "%s – %.1f %% sauber" % [zone_name, percent]
 	_progress.value = percent
 	_coins_label.text = "%s %s" % [_format_number(coins), config.currency_name]
 	var text := "Werkzeug: %s\n" % tool_text
@@ -144,8 +144,8 @@ func set_values(percent: float, coins: int, tool_text: String, affordable: int, 
 	_upgrade_label.text = text
 
 
-func set_rate(flakes_per_minute: int) -> void:
-	_rate_label.text = "Tempo: %s %s pro Minute" % [_format_number(flakes_per_minute), config.flake_name]
+func set_rate(flakes_per_minute: int, overall_percent: float) -> void:
+	_rate_label.text = "Tempo: %s %s pro Minute · Gesamt: %.1f %%" % [_format_number(flakes_per_minute), config.flake_name, overall_percent]
 
 
 func set_radar(seconds_left: float) -> void:

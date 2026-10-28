@@ -15,6 +15,7 @@ erst per Hand, dann immer schneller“. Hier steht nichts über ein bestimmtes T
 | Sammelobjekt | `core/collectible_def.gd` (`CleanCollectibleDef`) | Verstecktes Objekt mit dauerhaftem Bonus |
 | Schmutz | `world/mess_field.gd` (`CleanMessField`) | Zehntausende Flocken mit Dicke, Radar-Leuchten, Speichern |
 | Versteck | `world/collectible.gd` (`CleanCollectible`) | Glitzert unter dem Schmutz, taucht beim Putzen auf |
+| Zone | `core/zone.gd` (`CleanZone`) | Saal mit eigenem Schmutz, Fortschritt, Münz-Faktor und Türen |
 | Leiter | `world/ladder.gd` (`CleanLadder`) | Kletterbereich |
 | Roboter | `bots/bot.gd` (`CleanBot`) | Grundlage für alles, was selbst putzt |
 | Schienen-Roboter | `bots/rail_bot.gd` (`CleanRailBot`) | Fährt eine Linie ab und putzt auf mehreren Höhen |
@@ -41,6 +42,8 @@ erst per Hand, dann immer schneller“. Hier steht nichts über ein bestimmtes T
 4. In `scenes/main.tscn` das Skript auf `<thema>_game.gd` umstellen.
 5. Roboter: Upgrade mit `CleanUpgrade.make_bot(..., "rail")` oder `"drone"`. Jede Stufe kauft einen Roboter.
    Schienen legt `_build_world()` mit `add_rail(from, to, heights, facing)` an; eigene Modelle über `_make_bot_model(kind)`.
-6. Schmutzfarbe ändern: `mess.base_color = Color(...)` am Anfang von `_build_world()`.
+6. Weitere Säle: `add_zone(id, name, grundfläche, bonus, münzfaktor, farbe)` in `_build_world()`, Schmutz mit `zone.mess.add_area(...)`,
+   Tür mit `add_door(...)`, freischalten über `CleanUpgrade.make_zone(..., zone_id)`.
+7. Schmutzfarbe ändern: `mess.base_color = Color(...)` am Anfang von `_build_world()`.
 
 Den Ordner `addons/clean_core` kann man unverändert in ein anderes Godot-4.7-Projekt kopieren.

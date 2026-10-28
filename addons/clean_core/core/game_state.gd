@@ -7,8 +7,8 @@ var config: CleanGameConfig
 var coins := 0
 var levels := {}                      # Upgrade-ID -> Stufe
 var found: Array[String] = []         # IDs gefundener Sammelobjekte
-var milestones_hit: Array[int] = []
-var zone_done := false
+var milestones_hit: Array[String] = []   # "zonen-id:prozent"
+var zones_done: Array[String] = []
 
 
 func _init(p_config: CleanGameConfig) -> void:
@@ -52,6 +52,14 @@ func stat(name: String) -> float:
 			collect_mult *= c.mult
 	var base: float = config.base_stats.get(name, 0.0)
 	return (base + add) * upgrade_mult * collect_mult
+
+
+## Eine Zone ist offen, wenn kein Upgrade sie freischaltet oder dieses gekauft ist.
+func is_zone_unlocked(zone_id: String) -> bool:
+	for u in config.upgrades:
+		if u.unlocks_zone == zone_id:
+			return level(u.id) > 0
+	return true
 
 
 func is_tool_unlocked(tool: CleanTool) -> bool:
@@ -105,7 +113,7 @@ func to_dict() -> Dictionary:
 		"levels": levels,
 		"found": found,
 		"milestones": milestones_hit,
-		"zone_done": zone_done,
+		"zones_done": zones_done,
 	}
 
 
@@ -117,5 +125,9 @@ func from_dict(data: Dictionary) -> void:
 	for id: Variant in data.get("found", []):
 		found.append(str(id))
 	for m: Variant in data.get("milestones", []):
-		milestones_hit.append(int(m))
-	zone_done = bool(data.get("zone_done", false))
+		# ältere Spielstände kannten nur eine Zone und speicherten nur die Prozentzahl
+		milestones_hit.append(str(m) if str(m).contains(":") else "main:%d" % int(m))
+	for z: Variant in data.get("zones_done", []):
+		zones_done.append(str(z))
+	if bool(data.get("zone_done", false)):
+		zones_done.append("main")

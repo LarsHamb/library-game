@@ -16,6 +16,10 @@ const CASE_BOARDS := [0.1, 0.6, 1.1, 1.6, 2.1, 2.6]
 const DUSTY_BOARDS := 6   # alle Böden; die oberen erreicht man über die Leitern
 const UPPER_BOARD_DIRT := 0.3   # oben putzt nie jemand, da liegt mehr Staub
 const LADDER_TOP := 1.45        # höchste Fußhöhe auf der Leiter
+# --- Türen zu den Nebensälen (in beiden Seitenwänden) ---
+const DOOR_Z := 9.0
+const DOOR_W := 3.0
+const DOOR_H := 3.5
 const ROW_Z := [-10.0, -5.5, -1.0, 3.5]
 const COLUMN_X := [-7.0, -3.5, 3.5, 7.0]
 const BOOK_COLORS := [
@@ -34,6 +38,7 @@ var _book_transforms: Array[Transform3D] = []
 var _book_colors := PackedColorArray()
 var _shelf_spots: Array[Vector3] = []   # mögliche Verstecke für seltene Bücher auf Regalböden
 var _no_floor_dust: Array[Rect2] = []
+var _extra_spots: Array[Vector3] = []   # Verstecke für Bücher in den Nebensälen
 
 
 # ================================================================ Anbindung an den Kern
@@ -48,6 +53,8 @@ func _build_world() -> void:
 	_build_shelves(_no_floor_dust)
 	_build_tables(_no_floor_dust)
 	mess.add_area(Vector3.ZERO, HALL_SIZE - Vector2(0.4, 0.4), 0.2, 1.0, _no_floor_dust)
+	_build_archive()
+	_build_dome()
 	_build_books()
 	_add_air_motes(HALL_SIZE.x * 0.5)
 
@@ -84,8 +91,9 @@ func _collectible_spots() -> Array[Vector3]:
 		if free and p.distance_to(config.player_start) > 4.0:
 			spots.append(p)
 	var high_spots := _shelf_spots.filter(func(v: Vector3) -> bool: return v.y > 1.5)
-	while spots.size() < config.collectibles.size():
+	while spots.size() < 5:
 		spots.append(high_spots[rng.randi() % high_spots.size()])
+	spots.append_array(_extra_spots)   # Buch 6 im Kartenarchiv, Buch 7 im Kuppelsaal
 	return spots
 
 
@@ -216,11 +224,158 @@ func _build_hall() -> void:
 	var wall := mat("wall", Color(0.5, 0.4, 0.32), 0.95)
 	box(Vector3(HALL_SIZE.x, WALL_HEIGHT, 0.3), Vector3(0, WALL_HEIGHT * 0.5, -hz - 0.15), wall)
 	box(Vector3(HALL_SIZE.x, WALL_HEIGHT, 0.3), Vector3(0, WALL_HEIGHT * 0.5, hz + 0.15), wall)
-	box(Vector3(0.3, WALL_HEIGHT, HALL_SIZE.y), Vector3(-hx - 0.15, WALL_HEIGHT * 0.5, 0), wall)
-	box(Vector3(0.3, WALL_HEIGHT, HALL_SIZE.y), Vector3(hx + 0.15, WALL_HEIGHT * 0.5, 0), wall)
+	# Seitenwände mit je einer Tür zu einem Nebensaal
+	for side: float in [-1.0, 1.0]:
+		var x := side * (hx + 0.15)
+		var back_len := DOOR_Z - DOOR_W * 0.5 + hz
+		var front_len := hz - DOOR_Z - DOOR_W * 0.5
+		box(Vector3(0.3, WALL_HEIGHT, back_len), Vector3(x, WALL_HEIGHT * 0.5, -hz + back_len * 0.5), wall)
+		box(Vector3(0.3, WALL_HEIGHT, front_len), Vector3(x, WALL_HEIGHT * 0.5, hz - front_len * 0.5), wall)
+		box(Vector3(0.3, WALL_HEIGHT - DOOR_H, DOOR_W), Vector3(x, DOOR_H + (WALL_HEIGHT - DOOR_H) * 0.5, DOOR_Z), wall)
 	box(Vector3(HALL_SIZE.x + 0.6, 0.3, HALL_SIZE.y + 0.6), Vector3(0, WALL_HEIGHT + 0.15, 0),
 		mat("ceiling", Color(0.3, 0.22, 0.16)), false)
 
+
+# ================================================================ Nebensäle
+
+## Kartenarchiv links: niedrige Decke, Kartenschränke, Globen, rußiger Staub (1,5× Münzen).
+func _build_archive() -> void:
+	var zone := add_zone("archive", "Kartenarchiv", Rect2(-27.0, -2.0, 16.0, 16.0), 8000, 1.5, Color(0.5, 0.47, 0.44))
+	var cx := -19.0
+	var cz := 6.0
+	var size := Vector2(16.0, 16.0)
+	var height := 4.5
+	_build_room(Vector3(cx, 0, cz), size, height, -1.0, mat("archive_wall", Color(0.4, 0.37, 0.34), 0.95),
+		mat("archive_ceiling", Color(0.24, 0.21, 0.19)))
+	var hx := HALL_SIZE.x * 0.5
+	add_door(zone, Vector3(0.2, DOOR_H, DOOR_W), Vector3(-hx - 0.15, DOOR_H * 0.5, DOOR_Z), mat("door", Color(0.3, 0.18, 0.1)),
+		"Kartenarchiv\n[U] im Upgrade-Laden öffnen", Vector3(-hx + 0.8, DOOR_H + 0.7, DOOR_Z))
+
+	var excludes: Array[Rect2] = []
+	var none: Array[Rect2] = []
+	var wood := mat("cabinet", Color(0.28, 0.17, 0.1), 0.6)
+	var brass := mat("brass", Color(0.75, 0.6, 0.3), 0.3)
+	for x: float in [-24.5, -21.0, -17.5, -14.0]:
+		for z: float in [0.8, 3.8, 6.4, 11.8]:
+			box(Vector3(2.4, 1.1, 1.0), Vector3(x, 0.55, z), wood)
+			for y: float in [0.3, 0.6, 0.9]:
+				for side: float in [-0.51, 0.51]:
+					box(Vector3(2.3, 0.02, 0.02), Vector3(x, y, z + side), brass, false)
+			zone.mess.add_area(Vector3(x, 1.1, z), Vector2(2.3, 0.9), 0.1, 0.6, none, 0.2)
+			excludes.append(Rect2(x - 1.25, z - 0.55, 2.5, 1.1))
+	_extra_spots.append(Vector3(-21.0 + 0.6, 1.1, 11.8))
+
+	var blue := mat("globe", Color(0.25, 0.4, 0.55), 0.5)
+	for g: Vector2 in [Vector2(-25.8, 13.0), Vector2(-25.8, -0.8), Vector2(-12.5, -0.8)]:
+		box(Vector3(0.08, 0.9, 0.08), Vector3(g.x, 0.45, g.y), brass, false)
+		var globe := MeshInstance3D.new()
+		var sphere := SphereMesh.new()
+		sphere.radius = 0.35
+		sphere.height = 0.7
+		sphere.material = blue
+		globe.mesh = sphere
+		globe.position = Vector3(g.x, 1.2, g.y)
+		add_child(globe)
+		add_collider(Vector3(0.6, 1.6, 0.6), Vector3(g.x, 0.8, g.y))
+		excludes.append(Rect2(g.x - 0.4, g.y - 0.4, 0.8, 0.8))
+
+	zone.mess.add_area(Vector3(cx, 0, cz), size - Vector2(0.4, 0.4), 0.2, 1.0, excludes, 0.25)
+	for lx: float in [-4.0, 4.0]:
+		for lz: float in [-4.0, 4.0]:
+			_add_lamp(Vector3(cx + lx, height - 0.6, cz + lz), Color(0.95, 0.85, 0.7), 1.3, 9.0, lx < 0 and lz < 0)
+
+
+## Kuppelsaal rechts: hohe Glaskuppel, Statuen, ein großer Lesetisch und Goldstaub (2,5× Münzen).
+func _build_dome() -> void:
+	var zone := add_zone("dome", "Kuppelsaal", Rect2(11.0, -2.0, 18.0, 16.0), 25000, 2.5, Color(0.86, 0.73, 0.42))
+	zone.mess.thick_darken = 0.04
+	var cx := 20.0
+	var cz := 6.0
+	var size := Vector2(18.0, 16.0)
+	var height := 10.0
+	_build_room(Vector3(cx, 0, cz), size, height, 1.0, mat("dome_wall", Color(0.75, 0.7, 0.62), 0.9),
+		mat("dome_ceiling", Color(0.55, 0.5, 0.45)))
+	var hx := HALL_SIZE.x * 0.5
+	add_door(zone, Vector3(0.2, DOOR_H, DOOR_W), Vector3(hx + 0.15, DOOR_H * 0.5, DOOR_Z), mat("door", Color(0.3, 0.18, 0.1)),
+		"Kuppelsaal\n[U] im Upgrade-Laden öffnen", Vector3(hx - 0.8, DOOR_H + 0.7, DOOR_Z))
+
+	# Glaskuppel als leuchtende Scheibe mit kräftigem Licht
+	var sky := MeshInstance3D.new()
+	var disc := CylinderMesh.new()
+	disc.top_radius = 4.0
+	disc.bottom_radius = 4.0
+	disc.height = 0.05
+	var glass := StandardMaterial3D.new()
+	glass.albedo_color = Color(0.85, 0.92, 1.0)
+	glass.emission_enabled = true
+	glass.emission = Color(0.85, 0.92, 1.0)
+	glass.emission_energy_multiplier = 2.5
+	disc.material = glass
+	sky.mesh = disc
+	sky.position = Vector3(cx, height - 0.05, cz)
+	add_child(sky)
+	_add_lamp(Vector3(cx, height - 1.5, cz), Color(0.95, 0.97, 1.0), 3.0, 18.0, true)
+	for lx: float in [-6.0, 6.0]:
+		_add_lamp(Vector3(cx + lx, 5.0, cz), Color(1.0, 0.85, 0.6), 1.2, 9.0, false)
+
+	var excludes: Array[Rect2] = []
+	var none: Array[Rect2] = []
+	# Großer Lesetisch in der Mitte
+	var wood := mat("table", Color(0.42, 0.26, 0.14), 0.6)
+	box(Vector3(3.2, 0.9, 3.2), Vector3(cx, 0.45, cz), wood)
+	zone.mess.add_area(Vector3(cx, 0.9, cz), Vector2(3.0, 3.0), 0.1, 0.6, none, 0.1)
+	excludes.append(Rect2(cx - 1.7, cz - 1.7, 3.4, 3.4))
+	_extra_spots.append(Vector3(cx + 0.9, 0.9, cz - 0.7))
+
+	# Vier Statuen auf Sockeln
+	var marble := mat("marble", Color(0.92, 0.9, 0.86), 0.35)
+	for p: Vector2 in [Vector2(14.5, 1.0), Vector2(25.5, 1.0), Vector2(14.5, 11.0), Vector2(25.5, 11.0)]:
+		box(Vector3(1.0, 1.0, 1.0), Vector3(p.x, 0.5, p.y), marble)
+		var statue := MeshInstance3D.new()
+		var capsule := CapsuleMesh.new()
+		capsule.radius = 0.25
+		capsule.height = 1.6
+		capsule.material = marble
+		statue.mesh = capsule
+		statue.position = Vector3(p.x, 1.8, p.y)
+		add_child(statue)
+		add_collider(Vector3(0.5, 1.6, 0.5), Vector3(p.x, 1.8, p.y))
+		var under_statue: Array[Rect2] = [Rect2(p.x - 0.28, p.y - 0.28, 0.56, 0.56)]
+		zone.mess.add_area(Vector3(p.x, 1.0, p.y), Vector2(0.9, 0.9), 0.08, 0.5, under_statue)
+		excludes.append(Rect2(p.x - 0.55, p.y - 0.55, 1.1, 1.1))
+
+	# Hohe Bücherwand an der Rückseite (Kulisse)
+	var tall_boards: Array = []
+	var y := 0.1
+	while y < height - 1.0:
+		tall_boards.append(y)
+		y += 0.5
+	_build_case(cx, -2.0 + CASE_DEPTH * 0.5, 1.0, size.x - 0.1, height - 0.6, tall_boards, 0)
+	excludes.append(Rect2(cx - size.x * 0.5, -2.0, size.x, CASE_DEPTH + 0.05))
+
+	zone.mess.add_area(Vector3(cx, 0, cz), size - Vector2(0.4, 0.4), 0.2, 1.0, excludes)
+
+
+## Boden, drei Außenwände und Decke eines Nebensaals. side = -1 links vom Lesesaal, +1 rechts.
+func _build_room(center: Vector3, size: Vector2, height: float, side: float, wall: Material, ceiling: Material) -> void:
+	box(Vector3(size.x, 0.2, size.y), center + Vector3(0, -0.1, 0), _floor_mat())
+	box(Vector3(0.3, height, size.y), Vector3(center.x + side * (size.x * 0.5 + 0.15), height * 0.5, center.z), wall)
+	box(Vector3(size.x, height, 0.3), Vector3(center.x, height * 0.5, center.z - size.y * 0.5 - 0.15), wall)
+	box(Vector3(size.x, height, 0.3), Vector3(center.x, height * 0.5, center.z + size.y * 0.5 + 0.15), wall)
+	box(Vector3(size.x + 0.6, 0.3, size.y + 0.6), Vector3(center.x, height + 0.15, center.z), ceiling, false)
+
+
+func _add_lamp(pos: Vector3, color: Color, energy: float, light_range: float, shadow: bool) -> void:
+	var lamp := OmniLight3D.new()
+	lamp.position = pos
+	lamp.light_color = color
+	lamp.light_energy = energy
+	lamp.omni_range = light_range
+	lamp.shadow_enabled = shadow
+	add_child(lamp)
+
+
+# ================================================================ Lesesaal
 
 func _build_shelves(no_floor_dust: Array[Rect2]) -> void:
 	var hx := HALL_SIZE.x * 0.5

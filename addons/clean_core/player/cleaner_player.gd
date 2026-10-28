@@ -15,7 +15,7 @@ const JUMP_VELOCITY := 4.2
 const EYE_HEIGHT := 1.65
 const TOOL_POS := Vector3(0.32, -0.3, -0.5)
 
-var mess_field: CleanMessField
+var mess_fields: Array[CleanMessField] = []   # alles, was die Figur putzen kann (offene Zonen)
 var mouse_sensitivity := 0.0025
 var tool: CleanTool
 var clean_radius := 0.45
@@ -277,7 +277,11 @@ func _update_cleaning(delta: float) -> void:
 
 	if _cleaning:
 		swept.emit(point, clean_radius)
-	if _cleaning and mess_field and mess_field.clean_at(point, clean_radius, clean_power * delta) > 0:
+	var touched := 0
+	if _cleaning:
+		for field in mess_fields:
+			touched += field.clean_at(point, clean_radius, clean_power * delta)
+	if touched > 0:
 		cleaning_mess = true
 		_puff.global_position = point
 		_puff_timer = 0.15

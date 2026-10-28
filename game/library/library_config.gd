@@ -34,6 +34,9 @@ static func create() -> CleanGameConfig:
 		CleanUpgrade.make_bot("drone", "Saug-Drohne", "Fliegt über die Regale und saugt selbst Staub auf Boden und Tischen", 600, 1.5, 8, "drone"),
 		CleanUpgrade.make("bot_speed", "Schnellere Motoren", "+20 % Tempo aller Roboter", 500, 1.8, 6, "bot_speed", 0.0, 0.2),
 		CleanUpgrade.make("bot_power", "Bessere Bürsten", "+25 % Putzkraft aller Roboter", 500, 1.8, 6, "bot_power", 0.0, 0.25),
+		# Neue Säle (Tür in der linken bzw. rechten Wand des Lesesaals)
+		CleanUpgrade.make_zone("open_archive", "Kartenarchiv öffnen", "Neuer Saal: Kartenschränke und Globen, rußiger Staub bringt 1,5× Münzen", 8000, "archive"),
+		CleanUpgrade.make_zone("open_dome", "Kuppelsaal öffnen", "Neuer Saal unter der Glaskuppel voller Goldstaub: 2,5× Münzen", 40000, "dome"),
 	])
 
 	# make(id, Name, Bonus-Text, Wert, +, ×, Werkzeug)
@@ -43,5 +46,7 @@ static func create() -> CleanGameConfig:
 		CleanCollectibleDef.make("gold", "Chronik des Goldes", "+50 % Münzen", "coin_mult", 0.0, 1.5),
 		CleanCollectibleDef.make("feet", "Von leichten Füßen", "+25 % Laufen und Klettern", "speed", 0.0, 1.25),
 		CleanCollectibleDef.make("vacuum_plan", "Bauplan: Staubsauger", "Schaltet den Staubsauger frei", "", 0.0, 1.0, "vacuum"),
+		CleanCollectibleDef.make("hidden_map", "Karte der verborgenen Winkel", "Radar lädt 30 % schneller", "radar_cooldown", 0.0, 0.7),
+		CleanCollectibleDef.make("star_catalog", "Sternenkatalog", "+30 % Putzkraft aller Roboter", "bot_power", 0.0, 1.3),
 	])
 	return c
