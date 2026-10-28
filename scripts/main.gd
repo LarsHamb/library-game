@@ -1,9 +1,10 @@
 extends Node3D
-## Baut den Lesesaal auf und hält den Spielstand: Fortschritt, Münzen und Wedel-Upgrade.
+## Baut den Lesesaal auf und hält den Spielstand: Fortschritt, Münzen, Wedel-Upgrade und Staub-Radar.
 
 const DustField := preload("res://scripts/dust_field.gd")
 const Player := preload("res://scripts/player.gd")
 const Hud := preload("res://scripts/hud.gd")
+const Sfx := preload("res://scripts/sfx.gd")
 
 # --- Raum ---
 const ZONE_NAME := "Großer Lesesaal"
@@ -15,7 +16,9 @@ const CASE_WIDTH := 3.5
 const CASE_DEPTH := 0.55
 const CASE_HEIGHT := 3.0
 const CASE_BOARDS := [0.1, 0.6, 1.1, 1.6, 2.1, 2.6]
-const DUSTY_BOARDS := 3   # nur die unteren drei Böden sind von unten erreichbar
+const DUSTY_BOARDS := 6   # alle Böden; die oberen erreicht man über die Leitern
+const UPPER_BOARD_DIRT := 0.3   # oben putzt nie jemand, da liegt mehr Staub
+const LADDER_TOP := 1.45        # höchste Fußhöhe auf der Leiter
 const ROW_Z := [-10.0, -5.5, -1.0, 3.5]
 const COLUMN_X := [-7.0, -3.5, 3.5, 7.0]
 const BOOK_COLORS := [
@@ -25,18 +28,21 @@ const BOOK_COLORS := [
 ]
 
 # --- Wirtschaft ---
-const COINS_PER_FLAKE := 1
-const UPGRADE_BASE_COST := 60
-const UPGRADE_COST_FACTOR := 1.7
+const UPGRADE_BASE_COST := 100
+const UPGRADE_COST_FACTOR := 1.9
 const BASE_RADIUS := 0.45
 const RADIUS_PER_LEVEL := 0.25
 const TOOL_NAMES := [
 	"Staubwedel", "Flauschwedel", "Großer Flauschwedel", "Federbesen", "Breitbesen",
 	"Riesenwedel", "Wedel XXL", "Turbowedel", "Wedel des Oberbibliothekars",
 ]
-const MILESTONES := {25: 250, 50: 500, 75: 1000}   # Prozent -> Bonus-Münzen
-const COMPLETE_AT := 98.0   # ab hier wird der Rest automatisch weggepustet
-const COMPLETE_BONUS := 2000
+const MILESTONES := {25: 500, 50: 1000, 75: 2000}   # Prozent -> Bonus-Münzen
+const COMPLETE_AT := 99.5   # ab hier wird der Rest automatisch weggepustet
+const COMPLETE_BONUS := 5000
+const BASE_POWER := 6.0          # Staubmenge pro Sekunde in der Ringmitte
+const POWER_PER_LEVEL := 1.0
+const RADAR_DURATION := 6.0
+const RADAR_COOLDOWN := 20.0
 
 var coins := 0
 var upgrade_level := 0
@@ -45,6 +51,7 @@ var zone_done := false
 var dust: DustField
 var player: Player
 var hud: Hud
+var sfx: Sfx
 
 var _milestones_hit: Array[int] = []
 var _rng := RandomNumberGenerator.new()
@@ -52,12 +59,17 @@ var _world_body: StaticBody3D
 var _book_transforms: Array[Transform3D] = []
 var _book_colors := PackedColorArray()
 var _mats := {}
+var _radar_cooldown := 0.0
+var _popup_coins := 0
+var _popup_timer := 0.0
 
 
 func _ready() -> void:
 	_rng.seed = 7
 	_setup_input()
 	_setup_environment()
+	sfx = Sfx.new()
+	add_child(sfx)
 
 	_world_body = StaticBody3D.new()
 	add_child(_world_body)
@@ -80,8 +92,10 @@ func _ready() -> void:
 	player.dust_field = dust
 	add_child(player)
 	player.set_clean_radius(_radius_for(upgrade_level))
+	player.clean_power = _power_for(upgrade_level)
 
 	hud = Hud.new()
+	hud.settings_changed.connect(_on_settings_changed)
 	add_child(hud)
 	_refresh_hud()
 	hud.toast("Willkommen im %s! Halte die linke Maustaste gedrückt, um Staub zu wedeln." % ZONE_NAME, 5.0)
@@ -90,39 +104,66 @@ func _ready() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("buy_upgrade"):
 		_try_buy_upgrade()
+	elif event.is_action_pressed("radar"):
+		_try_radar()
+
+
+func _process(delta: float) -> void:
+	sfx.set_cleaning(player.cleaning_dust)
+	# Münz-Popups sammeln, damit nicht jedes Bild ein eigenes "+1" erscheint
+	_popup_timer -= delta
+	if _popup_coins > 0 and _popup_timer <= 0.0:
+		hud.coin_popup(_popup_coins)
+		sfx.coin()
+		_popup_coins = 0
+		_popup_timer = 0.2
+	_radar_cooldown = maxf(0.0, _radar_cooldown - delta)
+	hud.set_radar(_radar_cooldown)
+
+
+func _on_settings_changed(mouse_sensitivity: float, volume: float) -> void:
+	player.mouse_sensitivity = mouse_sensitivity
+	AudioServer.set_bus_volume_db(0, linear_to_db(maxf(volume, 0.0001)))
 
 
 # ---------------------------------------------------------------- Spielstand
 
-func _on_flakes_removed(count: int) -> void:
-	coins += count * COINS_PER_FLAKE
+func _on_flakes_removed(_count: int, earned: int) -> void:
+	coins += earned
+	_popup_coins += earned
 	var percent := dust.progress_percent()
 	for m: int in MILESTONES:
 		if percent >= m and not _milestones_hit.has(m):
 			_milestones_hit.append(m)
 			coins += MILESTONES[m]
 			hud.toast("%d %% geschafft! Bonus: +%d Münzen" % [m, MILESTONES[m]])
+			sfx.jingle()
 	if not zone_done and percent >= COMPLETE_AT:
 		zone_done = true
 		coins += COMPLETE_BONUS
 		dust.clear_all()   # ruft diese Funktion erneut auf, zone_done verhindert eine Schleife
 		hud.toast("Der %s glänzt! Der letzte Staub fliegt davon.\nZonen-Bonus: +%d Münzen" % [ZONE_NAME, COMPLETE_BONUS], 6.0)
+		sfx.jingle()
 	_refresh_hud()
 
 
 func _try_buy_upgrade() -> void:
 	if upgrade_level >= TOOL_NAMES.size() - 1:
 		hud.toast("Dein Wedel ist schon so groß wie er nur sein kann!")
+		sfx.deny()
 		return
 	var cost := _upgrade_cost()
 	if coins < cost:
 		hud.toast("Dir fehlen noch %d Münzen für das Upgrade." % (cost - coins))
+		sfx.deny()
 		return
 	coins -= cost
 	upgrade_level += 1
 	player.set_clean_radius(_radius_for(upgrade_level))
+	player.clean_power = _power_for(upgrade_level)
 	player.set_tool_level(upgrade_level)
 	hud.toast("Neues Werkzeug: %s!" % TOOL_NAMES[upgrade_level])
+	sfx.upgrade()
 	_refresh_hud()
 
 
@@ -132,6 +173,23 @@ func _upgrade_cost() -> int:
 
 func _radius_for(level: int) -> float:
 	return BASE_RADIUS + RADIUS_PER_LEVEL * level
+
+
+func _power_for(level: int) -> float:
+	return BASE_POWER + POWER_PER_LEVEL * level
+
+
+func _try_radar() -> void:
+	if zone_done:
+		return
+	if _radar_cooldown > 0.0:
+		hud.toast("Das Staub-Radar lädt noch %d Sekunden." % ceili(_radar_cooldown))
+		sfx.deny()
+		return
+	_radar_cooldown = RADAR_COOLDOWN
+	dust.highlight(RADAR_DURATION)
+	hud.toast("Staub-Radar: Der restliche Staub leuchtet jetzt gelb.")
+	sfx.upgrade()
 
 
 func _refresh_hud() -> void:
@@ -150,6 +208,7 @@ func _setup_input() -> void:
 	_add_key_action("sprint", [KEY_SHIFT])
 	_add_key_action("jump", [KEY_SPACE])
 	_add_key_action("buy_upgrade", [KEY_U, KEY_E])
+	_add_key_action("radar", [KEY_R])
 	if not InputMap.has_action("clean"):
 		InputMap.add_action("clean")
 		var click := InputEventMouseButton.new()
@@ -256,6 +315,7 @@ func _build_case(cx: float, cz: float, dir: float, width: float, height: float, 
 
 	var inner := width - 0.1
 	var back := cz - dir * (d * 0.5 - 0.03)
+	var no_excludes: Array[Rect2] = []
 	for i in boards.size():
 		var board_y: float = boards[i]
 		var top := board_y + 0.02
@@ -270,8 +330,45 @@ func _build_case(cx: float, cz: float, dir: float, width: float, height: float, 
 		_add_collider(Vector3(inner, block_h, 0.3), Vector3(cx, top + block_h * 0.5, back + dir * 0.15))
 		if i < dusty:
 			var strip := d - 0.36
+			var extra := UPPER_BOARD_DIRT if board_y > 1.5 else 0.0
 			dust.add_area(Vector3(cx, top, cz + dir * (d * 0.5 - 0.02 - strip * 0.5)),
-				Vector2(inner - 0.04, strip), 0.075, 0.42)
+				Vector2(inner - 0.04, strip), 0.075, 0.42, no_excludes, extra)
+	if dusty > 0:
+		_build_ladder(cx + _rng.randf_range(-1.0, 1.0), cz + dir * (d * 0.5), dir, height)
+
+
+## Eine Leiter vor dem Regal. Man klettert, indem man auf das Regal zu läuft.
+func _build_ladder(x: float, front_z: float, dir: float, height: float) -> void:
+	var metal := _mat("ladder", Color(0.55, 0.42, 0.25), 0.5)
+	var z := front_z + dir * 0.12
+	for side: float in [-0.25, 0.25]:
+		_box(Vector3(0.04, height + 0.1, 0.04), Vector3(x + side, (height + 0.1) * 0.5, z), metal, false)
+	var y := 0.3
+	while y < height:
+		_box(Vector3(0.5, 0.03, 0.03), Vector3(x, y, z), metal, false)
+		y += 0.3
+
+	var area := Area3D.new()
+	var shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(0.8, height + 1.0, 0.7)
+	shape.shape = box
+	area.add_child(shape)
+	area.position = Vector3(x, (height + 1.0) * 0.5, front_z + dir * 0.35)
+	add_child(area)
+	var ladder := {"facing": Vector3(0, 0, dir), "top": LADDER_TOP}
+	area.body_entered.connect(_on_ladder_body_entered.bind(ladder))
+	area.body_exited.connect(_on_ladder_body_exited.bind(ladder))
+
+
+func _on_ladder_body_entered(body: Node3D, ladder: Dictionary) -> void:
+	if body == player:
+		player.enter_ladder(ladder)
+
+
+func _on_ladder_body_exited(body: Node3D, ladder: Dictionary) -> void:
+	if body == player:
+		player.exit_ladder(ladder)
 
 
 func _fill_books(cx: float, back: float, dir: float, inner: float, top: float, gap: float) -> void:

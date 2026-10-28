@@ -1,19 +1,24 @@
 extends CharacterBody3D
 ## Spielfigur in Ego-Perspektive mit Staubwedel.
 ## Linke Maustaste gedrückt halten = wedeln. Der Ring zeigt, wo und wie breit gewedelt wird.
+## An Leitern: nach vorne laufen = hochklettern, rückwärts = runter, Leertaste = abspringen.
 
 const DustField := preload("res://scripts/dust_field.gd")
 
 const WALK_SPEED := 4.0
 const SPRINT_SPEED := 7.0
+const CLIMB_SPEED := 2.2
 const JUMP_VELOCITY := 4.2
-const MOUSE_SENSITIVITY := 0.0025
 const EYE_HEIGHT := 1.65
 const DUSTER_REST := Vector3(-1.22, 0.0, -0.21)   # Wedel zeigt schräg nach vorne oben
+const DUSTER_POS := Vector3(0.32, -0.3, -0.5)
 
 var dust_field: DustField
+var mouse_sensitivity := 0.0025
 var clean_radius := 0.45
+var clean_power := 6.0      # Staubmenge pro Sekunde in der Ringmitte
 var reach := 3.2
+var cleaning_dust := false  # wird gerade wirklich Staub erwischt? (für Geräusch)
 
 var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
 var _head: Node3D
@@ -25,7 +30,9 @@ var _duster: Node3D
 var _duster_head: MeshInstance3D
 var _cleaning := false
 var _swing_time := 0.0
+var _bob_time := 0.0
 var _puff_timer := 0.0
+var _ladders: Array[Dictionary] = []   # Leitern, an denen man gerade steht
 
 
 func _ready() -> void:
@@ -70,28 +77,43 @@ func set_tool_level(level: int) -> void:
 	_duster_head.scale = Vector3(s, s * 1.5, s)
 
 
+## Wird von der Leiter aufgerufen. {"facing": zeigt vom Regal weg, "top": höchste Fußhöhe}
+func enter_ladder(ladder: Dictionary) -> void:
+	_ladders.append(ladder)
+
+
+func exit_ladder(ladder: Dictionary) -> void:
+	_ladders.erase(ladder)
+
+
+func is_climbing() -> bool:
+	return not _ladders.is_empty()
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		var motion := event as InputEventMouseMotion
-		rotate_y(-motion.relative.x * MOUSE_SENSITIVITY)
-		_head.rotate_x(-motion.relative.y * MOUSE_SENSITIVITY)
+		rotate_y(-motion.relative.x * mouse_sensitivity)
+		_head.rotate_x(-motion.relative.y * mouse_sensitivity)
 		_head.rotation.x = clampf(_head.rotation.x, -1.45, 1.45)
 	elif event is InputEventMouseButton and event.is_pressed() and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		get_viewport().set_input_as_handled()
-	elif event.is_action_pressed("ui_cancel"):
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 
 func _physics_process(delta: float) -> void:
-	if not is_on_floor():
+	var input := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+	var direction := (transform.basis * Vector3(input.x, 0, input.y)).normalized()
+	var speed := SPRINT_SPEED if Input.is_action_pressed("sprint") else WALK_SPEED
+
+	if is_climbing():
+		_climb(input)
+		speed = WALK_SPEED * 0.5
+	elif not is_on_floor():
 		velocity.y -= _gravity * delta
 	elif Input.is_action_just_pressed("jump"):
 		velocity.y = JUMP_VELOCITY
 
-	var input := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
-	var direction := (transform.basis * Vector3(input.x, 0, input.y)).normalized()
-	var speed := SPRINT_SPEED if Input.is_action_pressed("sprint") else WALK_SPEED
 	if direction:
 		velocity.x = direction.x * speed
 		velocity.z = direction.z * speed
@@ -103,17 +125,51 @@ func _physics_process(delta: float) -> void:
 	_update_cleaning(delta)
 
 
+func _climb(input: Vector2) -> void:
+	var ladder: Dictionary = _ladders.back()
+	var facing: Vector3 = ladder["facing"]
+	var top: float = ladder["top"]
+	var forward := -global_basis.z
+	if Input.is_action_just_pressed("jump"):
+		# Abspringen: weg von der Leiter
+		_ladders.clear()
+		velocity = facing * 3.0 + Vector3.UP * 2.0
+		return
+	var climb := 0.0
+	if input.y < -0.1 and forward.dot(-facing) > 0.2:
+		climb = 1.0
+	elif input.y > 0.1:
+		climb = -1.0
+	velocity.y = climb * CLIMB_SPEED
+	if global_position.y >= top and velocity.y > 0.0:
+		velocity.y = 0.0
+
+
 func _process(delta: float) -> void:
 	# Wedel schwingt beim Putzen hin und her, sonst ruht er.
 	if _cleaning:
 		_swing_time += delta * 16.0
-		_duster.rotation = DUSTER_REST + Vector3(sin(_swing_time * 0.5) * 0.15, 0.0, sin(_swing_time) * 0.4)
+		_duster.rotation = DUSTER_REST + Vector3(sin(_swing_time * 0.5) * 0.2, 0.0, sin(_swing_time) * 0.45)
+		_duster.position = DUSTER_POS + Vector3(sin(_swing_time) * 0.04, absf(cos(_swing_time)) * 0.02, 0.0)
 	else:
 		_duster.rotation = _duster.rotation.lerp(DUSTER_REST, minf(1.0, delta * 10.0))
+		_duster.position = _duster.position.lerp(DUSTER_POS, minf(1.0, delta * 10.0))
+
+	# Leichtes Kopfwippen beim Laufen, feines Zittern beim Putzen
+	var ground_speed := Vector2(velocity.x, velocity.z).length()
+	var bob := Vector2.ZERO
+	if is_on_floor() and ground_speed > 0.5:
+		_bob_time += delta * ground_speed * 2.4
+		bob = Vector2(cos(_bob_time * 0.5) * 0.02, sin(_bob_time) * 0.035)
+	if cleaning_dust:
+		bob += Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)) * 0.004
+	_camera.h_offset = lerpf(_camera.h_offset, bob.x, minf(1.0, delta * 12.0))
+	_camera.v_offset = lerpf(_camera.v_offset, bob.y, minf(1.0, delta * 12.0))
 
 
 func _update_cleaning(delta: float) -> void:
 	_cleaning = Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and Input.is_action_pressed("clean")
+	cleaning_dust = false
 	_puff_timer -= delta
 
 	if not _ray.is_colliding():
@@ -126,7 +182,8 @@ func _update_cleaning(delta: float) -> void:
 	_ring.visible = true
 	_ring.global_transform = Transform3D(_basis_from_normal(normal).scaled(Vector3.ONE * clean_radius), point + normal * 0.03)
 
-	if _cleaning and dust_field and dust_field.clean_at(point, clean_radius) > 0:
+	if _cleaning and dust_field and dust_field.clean_at(point, clean_radius, clean_power * delta) > 0:
+		cleaning_dust = true
 		_puff.global_position = point
 		_puff_timer = 0.15
 	_puff.emitting = _puff_timer > 0.0
@@ -141,7 +198,7 @@ static func _basis_from_normal(n: Vector3) -> Basis:
 
 func _build_duster() -> void:
 	_duster = Node3D.new()
-	_duster.position = Vector3(0.32, -0.3, -0.5)
+	_duster.position = DUSTER_POS
 	_duster.rotation = DUSTER_REST
 	_camera.add_child(_duster)
 
