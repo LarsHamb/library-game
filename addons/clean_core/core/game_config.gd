@@ -40,6 +40,13 @@ extends Resource
 @export var player_start := Vector3.ZERO
 @export var player_start_yaw := 0.0
 @export var save_file := "user://savegame.json"
+## Grundfläche (x, z) der ersten Zone für die Karte; leer = keine Karte.
+@export var zone_bounds := Rect2()
+## Sobald Roboter laufen, legt sich pro Minute dieser Anteil Staub in sauberen Zonen neu.
+@export var regrow_per_minute := 0.004
+## Verdienst pro Roboter und Minute, während das Spiel aus ist (höchstens offline_max_hours).
+@export var offline_coins_per_bot_minute := 12.0
+@export var offline_max_hours := 8.0
 
 @export_group("Inhalt")
 @export var tools: Array[CleanTool] = []

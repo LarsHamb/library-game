@@ -7,6 +7,7 @@ extends CharacterBody3D
 
 signal swept(point: Vector3, radius: float)   # jedes Bild, in dem geputzt wird (für Sammelobjekte)
 signal tool_changed(tool: CleanTool)
+signal wrong_tool(field: CleanMessField)       # man putzt an Schmutz, für den ein anderes Werkzeug nötig ist
 
 const WALK_SPEED := 4.0
 const SPRINT_SPEED := 7.0
@@ -280,6 +281,10 @@ func _update_cleaning(delta: float) -> void:
 	var touched := 0
 	if _cleaning:
 		for field in mess_fields:
+			if field.required_tool != "" and field.required_tool != tool.id:
+				if field.count_at(point, clean_radius) > 0:
+					wrong_tool.emit(field)
+				continue
 			touched += field.clean_at(point, clean_radius, clean_power * delta)
 	if touched > 0:
 		cleaning_mess = true

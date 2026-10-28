@@ -15,6 +15,10 @@ const MAX_DIRT := 3.0      # dickste Stelle
 @export var base_color := Color(0.68, 0.64, 0.57)   # Farbe des Schmutzes
 @export var thick_darken := 0.07                     # dicke Stellen werden so viel dunkler
 @export var highlight_color := Color(1.0, 0.85, 0.2, 1.0)
+@export var display_name := ""          # für die Anzeige, z.B. "Spinnweben" (nur bei Zusatz-Schichten nötig)
+@export var required_tool := ""         # leer = jedes Werkzeug; sonst nur dieses (Roboter lassen es aus)
+@export var coin_mult := 1.0            # Münzen pro Flocke = Staubmenge × coin_mult
+@export var flake_shader: Shader        # leer = weiche Staubflocke
 
 var total := 0
 var remaining := 0
@@ -62,6 +66,13 @@ func add_area(center: Vector3, size: Vector2, spacing: float, flake_scale := 1.0
 			_add_flake(Transform3D(basis, p), color, dirt)
 
 
+## Eine einzelne Flocke an einer festen Stelle (z.B. ein Spinnennetz unter der Decke).
+func add_flake_at(pos: Vector3, flake_scale: float, dirt: float) -> void:
+	var basis := Basis(Vector3.UP, _rng.randf() * TAU).scaled(Vector3(flake_scale, 1.0, flake_scale))
+	var shade := _rng.randf_range(-0.04, 0.04)
+	_add_flake(Transform3D(basis, pos), Color(base_color.r + shade, base_color.g + shade, base_color.b + shade, 1.0), dirt)
+
+
 ## Erzeugt das MultiMesh. Einmal aufrufen, nachdem alle Flächen hinzugefügt wurden.
 func build() -> void:
 	var mm := MultiMesh.new()
@@ -104,13 +115,46 @@ func clean_at(point: Vector3, radius: float, amount: float) -> int:
 						_alive[i] = 0
 						_fading[i] = 0.0
 						removed += 1
-						coins += roundi(_dirt_max[i])
+						coins += roundi(_dirt_max[i] * coin_mult)
 					else:
 						_apply_look(i)
 	if removed > 0:
 		remaining -= removed
 		flakes_removed.emit(removed, coins)
 	return touched
+
+
+## Wie viele Flocken lägen im Umkreis? (ohne zu putzen)
+func count_at(point: Vector3, radius: float) -> int:
+	var n := 0
+	var r2 := radius * radius
+	var min_cell := _cell(point - Vector3.ONE * radius)
+	var max_cell := _cell(point + Vector3.ONE * radius)
+	for x in range(min_cell.x, max_cell.x + 1):
+		for y in range(min_cell.y, max_cell.y + 1):
+			for z in range(min_cell.z, max_cell.z + 1):
+				for i: int in _grid.get(Vector3i(x, y, z), []):
+					if _alive[i] == 1 and _positions[i].distance_squared_to(point) <= r2:
+						n += 1
+	return n
+
+
+## Staub legt sich wieder: count zufällige saubere Stellen bekommen eine dünne, neue Schicht.
+func regrow(count: int) -> void:
+	if total == 0 or remaining >= total:
+		return
+	var revived := 0
+	var tries := count * 6
+	while revived < count and tries > 0:
+		tries -= 1
+		var i := _rng.randi() % total
+		if _alive[i] == 1 or _fading.has(i):
+			continue
+		_alive[i] = 1
+		_dirt[i] = _dirt_max[i] * _rng.randf_range(0.35, 0.6)
+		_apply_look(i)
+		revived += 1
+	remaining += revived
 
 
 ## Pustet den Rest der Zone auf einmal weg (z.B. als Belohnung).
@@ -123,7 +167,7 @@ func clear_all() -> void:
 			_dirt[i] = 0.0
 			_fading[i] = -_rng.randf_range(0.0, 1.5)  # negativ = kleine Verzögerung
 			removed += 1
-			coins += roundi(_dirt_max[i])
+			coins += roundi(_dirt_max[i] * coin_mult)
 	if removed > 0:
 		remaining -= removed
 		flakes_removed.emit(removed, coins)
@@ -255,7 +299,7 @@ func _is_excluded(p: Vector3, excludes: Array[Rect2]) -> bool:
 
 func _make_flake_mesh() -> Mesh:
 	var mat := ShaderMaterial.new()
-	mat.shader = preload("res://addons/clean_core/shaders/mess_flake.gdshader")
+	mat.shader = flake_shader if flake_shader else preload("res://addons/clean_core/shaders/mess_flake.gdshader")
 	var plane := PlaneMesh.new()
 	plane.size = Vector2(FLAKE_SIZE, FLAKE_SIZE)
 	plane.material = mat
