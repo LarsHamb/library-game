@@ -21,7 +21,7 @@ func _ready() -> void:
 	_body_font = theme.default_font if theme.default_font else ThemeDB.fallback_font
 
 	var overlay := ColorRect.new()
-	overlay.color = Color(0.03, 0.02, 0.01, 0.75)
+	overlay.color = game.config.ui_overlay_color
 	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
 	overlay.theme = theme
 	add_child(overlay)
@@ -50,7 +50,7 @@ func _ready() -> void:
 	box.add_child(_canvas)
 
 	var hint := Label.new()
-	hint.text = "Klick auf einen offenen Saal: dorthin gehen   ·   M oder Esc: schließen"
+	hint.text = "Klick auf einen offenen %s: dorthin gehen   ·   M oder Esc: schließen" % game.config.zone_word
 	hint.add_theme_font_size_override("font_size", 15)
 	hint.modulate = Color(1, 1, 1, 0.75)
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -117,7 +117,8 @@ func _draw_map() -> void:
 		var rect := Rect2(xf * r.position, r.size * xf.get_scale())
 		var percent := z.progress_percent()
 		if z.unlocked:
-			var fill := Color(0.16, 0.11, 0.07, 0.95).lerp(Color(0.32, 0.26, 0.14, 0.95), percent / 100.0)
+			var base := Color(game.config.ui_panel_color, 0.95)
+			var fill := base.lightened(0.04).lerp(base.lightened(0.22), percent / 100.0)
 			_canvas.draw_rect(rect, fill)
 			# Fortschritt als Balken am unteren Rand
 			var bar := Rect2(rect.position + Vector2(10, rect.size.y - 18), Vector2((rect.size.x - 20) * percent / 100.0, 8))
@@ -132,8 +133,11 @@ func _draw_map() -> void:
 		_canvas.draw_string(name_font, text_pos, z.display_name, HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 20, 22, game.config.ui_text_color)
 		var info := "%.1f %% sauber" % percent if z.unlocked else "Gesperrt\nÖffnen im Upgrade-Laden"
 		for extra in z.layers:
-			if z.unlocked and extra.remaining > 0:
+			if z.unlocked and extra.remaining > 0 and extra.display_name != "":
 				info += "\n%s: %d übrig" % [extra.display_name, extra.remaining]
+		var loose := z.pickups.filter(func(pickup: CleanPickup) -> bool: return not pickup.done).size()
+		if z.unlocked and loose > 0:
+			info += "\n%s: %d übrig" % [game.config.pickup_name, loose]
 		var line := 0
 		for part in info.split("\n"):
 			_canvas.draw_string(_body_font, text_pos + Vector2(0, 26 + line * 20), part, HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 20, 16, Color(game.config.ui_text_color, 0.8))

@@ -15,6 +15,9 @@ extends Resource
 @export var pickup_name := "Fundsachen"        # z.B. "Verstreute Bücher"
 @export var pickup_prompt := "[Klick] zurücklegen"
 @export var welcome_text := ""
+@export var zone_word := "Saal"               # wie ein Bereich heißt ("Saal", "Bucht" ...), z.B. auf der Karte
+@export var bot_word := "Roboter"             # Sammelbegriff für alles, was selbst putzt
+@export var zone_unlocked_text := "Die Tür ist offen: %s!"   # %s = Name des Upgrades
 
 @export_group("Aussehen")
 @export_file("*.ttf", "*.otf") var ui_title_font := ""   # Überschriften, Münzen
@@ -22,6 +25,8 @@ extends Resource
 @export var ui_text_color := Color(0.96, 0.92, 0.82)
 @export var ui_accent_color := Color(0.85, 0.66, 0.32)
 @export var ui_panel_color := Color(0.1, 0.07, 0.05, 0.86)
+@export var ui_overlay_color := Color(0.03, 0.02, 0.01, 0.72)   # Abdunklung hinter Menü, Laden und Karte
+@export var ui_outline_color := Color(0.05, 0.03, 0.02, 0.9)    # Schriftkontur
 @export_file("*.ogg", "*.wav", "*.mp3") var music_file := ""   # läuft in Schleife
 
 @export_group("Grundwerte")

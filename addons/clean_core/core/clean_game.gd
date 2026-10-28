@@ -218,7 +218,7 @@ func _ready() -> void:
 	# Begrüßung erst, wenn das Startmenü zu ist – vorher läge sie unter dem Menü
 	var welcome := ""
 	if loaded and _offline_coins > 0:
-		welcome = "Willkommen zurück! Deine Roboter haben in %s\n%d %s verdient." % [_duration_text(_offline_minutes), _offline_coins, config.currency_name]
+		welcome = "Willkommen zurück! Deine %s haben in %s\n%d %s verdient." % [config.bot_word, _duration_text(_offline_minutes), _offline_coins, config.currency_name]
 	elif loaded:
 		welcome = "Willkommen zurück!"
 	else:
@@ -479,7 +479,7 @@ func _buy(id: String) -> void:
 		player.select_tool_by_id(u.unlock_tool)
 		hud.toast("%s freigeschaltet! Wechsle mit den Zifferntasten oder dem Mausrad." % u.display_name, 4.0)
 	if u.unlocks_zone != "":
-		hud.toast("Die Tür ist offen: %s!" % u.display_name, 4.0)
+		hud.toast(config.zone_unlocked_text % u.display_name, 4.0)
 		sfx.jingle()
 	shop.refresh()
 	_refresh_hud()
@@ -570,7 +570,7 @@ func _refresh_hud() -> void:
 	if keys.size() > 1:
 		tool_text += "\n" + "  ".join(keys)
 	if bot_count() > 0:
-		tool_text += "\nRoboter im Einsatz: %d" % bot_count()
+		tool_text += "\n%s im Einsatz: %d" % [config.bot_word, bot_count()]
 	for layer in current_zone.layers:
 		if layer.remaining > 0 and layer.display_name != "":
 			tool_text += "\n%s: %d übrig" % [layer.display_name, layer.remaining]
@@ -919,6 +919,9 @@ func _open_messes() -> Array[CleanMessField]:
 	for z in zones:
 		if z.unlocked:
 			list.append(z.mess)
+			for layer in z.layers:
+				if layer.drones_reach:
+					list.append(layer)
 	return list
 
 

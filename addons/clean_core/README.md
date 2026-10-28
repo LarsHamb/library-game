@@ -41,11 +41,15 @@ erst per Hand, dann immer schneller“. Hier steht nichts über ein bestimmtes T
    - optional: `_collectible_spots()`, `_make_collectible_model()`, `_build_environment()`, `_tool_display_name()`, `_on_stats_applied()`
 4. In `scenes/main.tscn` das Skript auf `<thema>_game.gd` umstellen.
 5. Roboter: Upgrade mit `CleanUpgrade.make_bot(..., "rail")` oder `"drone"`. Jede Stufe kauft einen Roboter.
+   Eigene Arten: `_spawn_bot(kind, index)` überschreiben (Beispiel: Siebmaschine und Förderband in `game/beach/bots`).
+   Zusatz-Schichten mit `drones_reach = true` fliegen Drohnen selbst an.
    Schienen legt `_build_world()` mit `add_rail(from, to, heights, facing)` an; eigene Modelle über `_make_bot_model(kind)`.
 6. Weitere Säle: `add_zone(id, name, grundfläche, bonus, münzfaktor, farbe)` in `_build_world()`, Schmutz mit `zone.mess.add_area(...)`,
    Tür mit `add_door(...)`, freischalten über `CleanUpgrade.make_zone(..., zone_id)`.
 7. Schmutzfarbe ändern: `mess.base_color = Color(...)` am Anfang von `_build_world()`.
-8. Aussehen: in der Config `ui_title_font`, `ui_body_font` und die drei `ui_*_color` setzen; daraus baut `CleanTheme` Menü, Anzeige und Laden.
+8. Aussehen: in der Config `ui_title_font`, `ui_body_font` (auch eine `FontVariation`-.tres) und die `ui_*_color` setzen; daraus baut `CleanTheme` Menü, Anzeige, Laden und Karte.
+   Begriffe: `zone_word` ("Saal", "Strandabschnitt"), `bot_word` ("Roboter", "Maschinen"), `zone_unlocked_text`.
+   Im Laden fasst `CleanUpgrade.category` Upgrades unter Überschriften zusammen.
    `_build_environment()` muss `environment` setzen, damit die Grafikstufe im Menü wirkt (`apply_quality`).
 9. Musik: `music_file` in der Config (läuft in Schleife, eigener Regler im Menü). Untertitel fürs Startmenü: `game_subtitle`.
 10. Startmenü-Kamerafahrt über `_title_view()`, Foto-Rundgang (`godot --path . -- --screenshots`) über `_screenshot_views()`.

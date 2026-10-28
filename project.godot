@@ -5,13 +5,13 @@ config_version=5
 
 [application]
 
-config/name="Bibliothek entstauben"
-config/description="Prototyp: eine riesige Bibliothek Stück für Stück entstauben."
-run/main_scene="res://scenes/main.tscn"
+config/name="Strandgut"
+config/description="Einen Strand voller Müll Stück für Stück aufräumen – erst per Hand, dann mit Maschinen."
+run/main_scene="res://scenes/beach.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
 config/icon="res://icon.svg"
-config/version="0.6"
-boot_splash/bg_color=Color(0.08, 0.05, 0.03, 1)
+config/version="0.7"
+boot_splash/bg_color=Color(0.02, 0.16, 0.22, 1)
 
 [display]
 

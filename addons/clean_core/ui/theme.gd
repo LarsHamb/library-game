@@ -15,7 +15,7 @@ static func build(config: CleanGameConfig) -> Theme:
 	var bg := config.ui_panel_color
 
 	t.set_color("font_color", "Label", text)
-	t.set_color("font_outline_color", "Label", Color(0.05, 0.03, 0.02, 0.9))
+	t.set_color("font_outline_color", "Label", config.ui_outline_color)
 	t.set_constant("outline_size", "Label", 5)
 
 	var panel := _box(bg, accent, 2, 10)

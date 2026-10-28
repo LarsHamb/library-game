@@ -20,6 +20,7 @@ const MAX_DIRT := 3.0      # dickste Stelle
 @export var required_tool := ""         # leer = jedes Werkzeug; sonst nur dieses (Roboter lassen es aus)
 @export var coin_mult := 1.0            # Münzen pro Flocke = Staubmenge × coin_mult
 @export var flake_shader: Shader        # leer = weiche Staubflocke
+@export var drones_reach := false       # Zusatz-Schicht, die Drohnen selbst anfliegen (sonst nur die Hauptschicht)
 ## Verknüpfte Flocken zeichnen sich nicht selbst, sondern schreiben ihre Staubmenge in die Instanzdaten
 ## (custom_data.r = Staub 0..1, .g = Radar, .b = ursprüngliche Dicke 0..1) dieses MultiMesh, z.B. der Bücher im Regal.
 var linked: MultiMesh

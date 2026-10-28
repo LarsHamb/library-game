@@ -16,6 +16,7 @@ extends Resource
 @export var unlock_tool := ""       # Werkzeug-ID, die ab Stufe 1 freigeschaltet ist
 @export var spawns_bot := ""        # Roboter-Art ("rail", "drone" ...): jede Stufe = ein Roboter mehr
 @export var unlocks_zone := ""      # Zonen-ID, die mit dem Kauf geöffnet wird
+@export var category := ""          # Überschrift im Laden (leer = keine); gleiche Kategorien hintereinander anlegen
 
 
 func cost(level: int) -> int:

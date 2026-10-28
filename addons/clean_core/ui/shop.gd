@@ -21,7 +21,7 @@ func _ready() -> void:
 
 	_title_font = CleanTheme.title_font(state.config)
 	var overlay := ColorRect.new()
-	overlay.color = Color(0.03, 0.02, 0.01, 0.7)
+	overlay.color = state.config.ui_overlay_color
 	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
 	overlay.theme = CleanTheme.build(state.config)
 	add_child(overlay)
@@ -96,12 +96,22 @@ func refresh() -> void:
 	for child in _rows.get_children():
 		child.queue_free()
 	var odd := false
+	var category := ""
 	for u in config.upgrades:
 		var level := state.level(u.id)
+		if u.category != "" and u.category != category:
+			category = u.category
+			var header := _label(_rows, 19, category.to_upper(), true)
+			header.add_theme_color_override("font_color", config.ui_accent_color)
+			header.add_theme_constant_override("outline_size", 0)
+			if _rows.get_child_count() > 1:
+				header.custom_minimum_size.y = 40
+				header.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+			odd = false
 		# Jede Zeile auf einer eigenen, abwechselnd getönten Leiste
 		var strip := PanelContainer.new()
 		var strip_style := StyleBoxFlat.new()
-		strip_style.bg_color = Color(1, 0.9, 0.7, 0.06 if odd else 0.025)
+		strip_style.bg_color = Color(config.ui_text_color, 0.07 if odd else 0.03)
 		strip_style.set_corner_radius_all(6)
 		strip_style.set_content_margin_all(8)
 		strip.add_theme_stylebox_override("panel", strip_style)

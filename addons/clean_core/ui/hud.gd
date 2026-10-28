@@ -292,7 +292,7 @@ func _bump_coins() -> void:
 
 func _build_menu() -> void:
 	var overlay := ColorRect.new()
-	overlay.color = Color(0.03, 0.02, 0.01, 0.72)
+	overlay.color = config.ui_overlay_color
 	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
 	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
 	_root.add_child(overlay)
