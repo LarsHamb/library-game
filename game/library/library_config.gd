@@ -14,6 +14,8 @@ static func create() -> CleanGameConfig:
 	c.welcome_text = "Willkommen im Großen Lesesaal! Halte die linke Maustaste gedrückt, um Staub zu wedeln."
 	c.player_start = Vector3(0, 0.05, 12.0)
 	c.save_file = "user://bibliothek_spielstand.json"
+	c.ui_title_font = "res://game/library/fonts/Cinzel.ttf"
+	c.ui_body_font = "res://game/library/fonts/Lora.ttf"
 
 	c.tools.assign([
 		CleanTool.make("duster", "Staubwedel", 1, CleanTool.Style.SWEEP),

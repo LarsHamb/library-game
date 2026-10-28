@@ -10,6 +10,8 @@ extends Node3D
 ##   _collectible_spots()      Verstecke für die Sammelobjekte
 ##   _make_collectible_model(def), _build_environment(), _tool_display_name(tool), _on_stats_applied()
 ##   _make_bot_model(kind)     Modell für Roboter (sonst einfache Standardmodelle)
+##   _screenshot_views()       Kamerapunkte für den Foto-Rundgang (Start mit: godot --path . -- --screenshots)
+## _build_environment() setzt `environment`; apply_quality() schaltet darauf je nach Grafikstufe Effekte an und aus.
 ## Roboter: Upgrades mit spawns_bot = "rail" oder "drone". Schienen legt die Welt mit add_rail() an.
 ## Zonen: die erste Zone (config.zone_name) gibt es immer; weitere legt _build_world() mit add_zone() an,
 ## Türen dazu mit add_door(). Freigeschaltet werden sie über Upgrades mit unlocks_zone.
@@ -24,6 +26,7 @@ var hud: CleanHud
 var sfx: CleanSfx
 var shop: CleanShop
 var world_body: StaticBody3D   # sammelt alle Kollisionsformen der Welt (siehe box/add_collider)
+var environment: Environment   # von _build_environment() gesetzt
 
 const RATE_WINDOW := 30        # Sekunden für die Tempo-Anzeige
 const AUTOSAVE_SECONDS := 30.0
@@ -98,9 +101,16 @@ func _build_environment() -> void:
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color.WHITE
 	env.ambient_light_energy = 0.6
+	env.tonemap_mode = Environment.TONE_MAPPER_AGX
 	var world_env := WorldEnvironment.new()
 	world_env.environment = env
 	add_child(world_env)
+	environment = env
+
+
+## Kamerapunkte für den Foto-Rundgang: je {"name": "lesesaal", "pos": Vector3, "look": Vector3}.
+func _screenshot_views() -> Array[Dictionary]:
+	return [{"name": "start", "pos": config.player_start + Vector3(0, 1.7, 0), "look": config.player_start + Vector3(0, 1.5, -5)}]
 
 
 func _tool_display_name(tool: CleanTool) -> String:
@@ -157,6 +167,7 @@ func _ready() -> void:
 	hud.menu_opened.connect(save_game)
 	hud.quit_requested.connect(_save_and_quit)
 	hud.new_game_requested.connect(_new_game)
+	hud.quality_changed.connect(apply_quality)
 	add_child(hud)
 	shop = CleanShop.new()
 	shop.state = state
@@ -167,6 +178,8 @@ func _ready() -> void:
 		hud.toast("Willkommen zurück!", 4.0)
 	elif config.welcome_text != "":
 		hud.toast(config.welcome_text, 5.0)
+	if OS.get_cmdline_user_args().has("--screenshots") or OS.get_cmdline_args().has("--screenshots"):
+		_screenshot_tour.call_deferred()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -223,6 +236,75 @@ func _process(delta: float) -> void:
 func _on_settings_changed(mouse_sensitivity: float, volume: float) -> void:
 	player.mouse_sensitivity = mouse_sensitivity
 	AudioServer.set_bus_volume_db(0, linear_to_db(maxf(volume, 0.0001)))
+
+
+## Grafikstufe: 0 niedrig, 1 mittel, 2 hoch. Schaltet teure Effekte und Schatten an und aus.
+func apply_quality(level: int) -> void:
+	var vp := get_viewport()
+	vp.msaa_3d = [Viewport.MSAA_DISABLED, Viewport.MSAA_2X, Viewport.MSAA_4X][level] as Viewport.MSAA
+	vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR if level == 0 else Viewport.SCALING_3D_MODE_BILINEAR
+	vp.scaling_3d_scale = 0.77 if level == 0 else 1.0
+	vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA if level == 0 else Viewport.SCREEN_SPACE_AA_DISABLED
+	if environment:
+		environment.ssao_enabled = level >= 1
+		environment.ssil_enabled = level >= 2
+		environment.ssr_enabled = level >= 2
+		environment.sdfgi_enabled = level >= 2
+		environment.volumetric_fog_enabled = level >= 1
+		environment.glow_enabled = true
+	# Schatten: auf "niedrig" nur noch das Hauptlicht; was einmal Schatten hatte, merkt sich das per Meta
+	for light: Node in find_children("*", "Light3D", true, false):
+		var l := light as Light3D
+		if not l.has_meta("clean_shadow"):
+			l.set_meta("clean_shadow", l.shadow_enabled)
+		var wanted: bool = l.get_meta("clean_shadow")
+		l.shadow_enabled = wanted and (level >= 1 or l is DirectionalLight3D)
+	RenderingServer.directional_soft_shadow_filter_set_quality([RenderingServer.SHADOW_QUALITY_HARD, RenderingServer.SHADOW_QUALITY_SOFT_LOW, RenderingServer.SHADOW_QUALITY_SOFT_MEDIUM][level] as RenderingServer.ShadowQuality)
+	RenderingServer.positional_soft_shadow_filter_set_quality([RenderingServer.SHADOW_QUALITY_HARD, RenderingServer.SHADOW_QUALITY_SOFT_LOW, RenderingServer.SHADOW_QUALITY_SOFT_MEDIUM][level] as RenderingServer.ShadowQuality)
+
+
+# ================================================================ Foto-Rundgang
+
+## Macht Bildschirmfotos vom Menü, der Anzeige, dem Laden und allen _screenshot_views()
+## und beendet dann das Spiel. Bilder landen in res://screenshots (nur beim Start aus dem Projektordner).
+func _screenshot_tour() -> void:
+	var dir := ProjectSettings.globalize_path("res://screenshots")
+	DirAccess.make_dir_recursive_absolute(dir)
+	FileAccess.open(dir.path_join(".gdignore"), FileAccess.WRITE)   # Godot soll die Fotos nicht importieren
+	await _tour_wait(3.0)
+	_tour_shot(dir, "00_menue")
+	hud.close_menu()
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	await _tour_wait(2.0)
+	_tour_shot(dir, "01_spiel")
+	shop.open()
+	await _tour_wait(0.6)
+	_tour_shot(dir, "02_laden")
+	shop.close()
+	var cam := Camera3D.new()
+	cam.fov = 72.0
+	cam.near = 0.05
+	add_child(cam)
+	cam.make_current()
+	hud.visible = false
+	var i := 3
+	for view in _screenshot_views():
+		cam.global_position = view["pos"]
+		cam.look_at(view["look"])
+		await _tour_wait(2.0)
+		_tour_shot(dir, "%02d_%s" % [i, view["name"]])
+		i += 1
+	print("Fotos gespeichert in ", dir)
+	get_tree().quit()
+
+
+func _tour_wait(seconds: float) -> void:
+	await get_tree().create_timer(seconds, true).timeout
+
+
+func _tour_shot(dir: String, file_name: String) -> void:
+	var img := get_viewport().get_texture().get_image()
+	img.save_png(dir.path_join(file_name + ".png"))
 
 
 # ================================================================ Spielstand
