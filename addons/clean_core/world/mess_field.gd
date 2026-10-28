@@ -21,7 +21,7 @@ const MAX_DIRT := 3.0      # dickste Stelle
 @export var coin_mult := 1.0            # Münzen pro Flocke = Staubmenge × coin_mult
 @export var flake_shader: Shader        # leer = weiche Staubflocke
 ## Verknüpfte Flocken zeichnen sich nicht selbst, sondern schreiben ihre Staubmenge in die Instanzdaten
-## (custom_data.r = Staub 0..1, .g = Radar) dieses MultiMesh, z.B. der Bücher im Regal.
+## (custom_data.r = Staub 0..1, .g = Radar, .b = ursprüngliche Dicke 0..1) dieses MultiMesh, z.B. der Bücher im Regal.
 var linked: MultiMesh
 
 var total := 0
@@ -296,7 +296,9 @@ func _apply_look(i: int) -> void:
 	if _links[i] >= 0:
 		var k := clampf(_dirt[i] / _dirt_max[i], 0.0, 1.0) if _alive[i] == 1 else 0.0
 		var glow := 1.0 if _highlight_time > 0.0 and _alive[i] == 1 else 0.0
-		linked.set_instance_custom_data(_links[i], Color(k, glow, 0.0, 0.0))
+		# b = wie dick der Staub dort ursprünglich war (0..1), damit nicht alles gleich grau aussieht
+		var thick := clampf(_dirt_max[i] / MAX_DIRT, 0.0, 1.0)
+		linked.set_instance_custom_data(_links[i], Color(k, glow, thick, 0.0))
 		return
 	var base := _transforms[i]
 	multimesh.set_instance_transform(i, Transform3D(base.basis.scaled(Vector3.ONE * _look_scale(i)), base.origin))

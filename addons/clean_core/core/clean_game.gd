@@ -560,6 +560,8 @@ func _try_radar() -> void:
 
 
 func _refresh_hud() -> void:
+	if hud == null:   # beim Laden des Spielstands gibt es die Anzeige noch nicht
+		return
 	var tool_text := _tool_display_name(player.tool) if player.tool else ""
 	var keys: Array[String] = []
 	for t in config.tools:
