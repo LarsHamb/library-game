@@ -37,6 +37,7 @@ var _menu: Control
 var _menu_button: Button
 var _menu_info: Label
 var _root: Control
+var _hud_items: Control
 var _title_font: Font
 
 
@@ -71,9 +72,14 @@ func _ready() -> void:
 	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.theme = CleanTheme.build(config)
 	add_child(_root)
+	# Alles, was beim Spielen eingeblendet ist; verschwindet hinter Menü, Laden und Karte
+	_hud_items = Control.new()
+	_hud_items.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_hud_items.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(_hud_items)
 
 	# Oben mittig: Zone und Fortschrittsbalken
-	var top := _panel(_root)
+	var top := _panel(_hud_items)
 	_anchor(top, 0.5, 0.0, 0.5, 0.0, -290, 14, 290, 118)
 	var top_box := VBoxContainer.new()
 	top_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -96,7 +102,7 @@ func _ready() -> void:
 	coins_box.alignment = BoxContainer.ALIGNMENT_END
 	coins_box.add_theme_constant_override("separation", 10)
 	_anchor(coins_box, 1.0, 0.0, 1.0, 0.0, -420, 18, -26, 66)
-	_root.add_child(coins_box)
+	_hud_items.add_child(coins_box)
 	var icon := CoinIcon.new()
 	icon.color = config.ui_accent_color.lightened(0.15)
 	icon.custom_minimum_size = Vector2(30, 30)
@@ -107,7 +113,7 @@ func _ready() -> void:
 	_coins_label.add_theme_color_override("font_color", config.ui_accent_color.lightened(0.3))
 
 	# Unten rechts: Werkzeug, Upgrade und Radar
-	var up := _panel(_root)
+	var up := _panel(_hud_items)
 	_anchor(up, 1.0, 1.0, 1.0, 1.0, -440, -150, -20, -20)
 	up.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	var up_box := VBoxContainer.new()
@@ -119,7 +125,7 @@ func _ready() -> void:
 	_radar_label.add_theme_color_override("font_color", config.ui_accent_color.lightened(0.2))
 
 	# Unten links: Steuerung (blendet sich nach einer Weile aus, F1 holt sie zurück)
-	_help = _label(_root, 15)
+	_help = _label(_hud_items, 15)
 	_help.text = "WASD laufen · Shift rennen · Leertaste springen · An Leitern: W hoch, S runter\nLinke Maustaste halten: putzen · Ziffern oder Mausrad: Werkzeug wechseln\nU: Upgrade-Laden · R: Radar · M: Karte · Esc: Menü · F1: diese Hilfe"
 	_help.modulate = Color(1, 1, 1, 0.8)
 	_anchor(_help, 0.0, 1.0, 0.0, 1.0, 22, -90, 720, -20)
@@ -129,7 +135,7 @@ func _ready() -> void:
 	var cross := Crosshair.new()
 	cross.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_anchor(cross, 0.5, 0.5, 0.5, 0.5, -14, -14, 14, 14)
-	_root.add_child(cross)
+	_hud_items.add_child(cross)
 
 	# Meldungen unter der Bildmitte, auf einer eigenen Tafel
 	var toast_holder := CenterContainer.new()
@@ -181,6 +187,7 @@ func _notification(what: int) -> void:
 func open_menu() -> void:
 	menu_opened.emit()
 	_menu.visible = true
+	_hud_items.visible = false
 	get_tree().paused = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_menu_button.grab_focus()
@@ -188,11 +195,17 @@ func open_menu() -> void:
 
 func close_menu() -> void:
 	_menu.visible = false
+	_hud_items.visible = true
 	_menu_button.text = "Weiter"
 	_menu_button.release_focus()   # sonst löst die Leertaste den Knopf statt Springen aus
 	get_tree().paused = false
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	menu_closed.emit()
+
+
+## Anzeige aus- und einblenden, z.B. solange Laden oder Karte offen sind.
+func set_hud_visible(on: bool) -> void:
+	_hud_items.visible = on and not _menu.visible
 
 
 ## Zeile unter dem Titel, z.B. der Spielstand.
