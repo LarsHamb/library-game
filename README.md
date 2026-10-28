@@ -10,7 +10,11 @@ und machst sie sauber. Erst per Hand mit dem Staubwedel, später immer schneller
 - Rund 30.000 Staubflocken auf Boden, Regalböden und Tischen. Dicker Staub braucht mehrere Durchgänge
 - **Leitern** an jedem Regal, um auch an die oberen (besonders staubigen) Böden zu kommen
 - Fortschritt in Prozent, **Münzen** pro Flocke (dicke Flocken bringen mehr), Boni bei 25 / 50 / 75 % und für den sauberen Saal
-- Ein Upgrade in 8 Stufen: Der Wedel wird größer und kräftiger
+- **Upgrade-Laden** (U) mit 7 Upgrades: Radius, Kraft, Reichweite, Tempo, Münzwert, Radar-Akku, Staubsauger
+- **Staubsauger** als zweites Werkzeug: schmal, stark, weit (Taste 1/2 oder Mausrad)
+- **5 seltene Bücher** unter dem Staub versteckt, jedes mit dauerhaftem Bonus. Sie glitzern leicht, das Radar zeigt sie mit Lichtsäulen
+- **Tempo-Anzeige**: Flocken pro Minute
+- **Speichern**: automatisch alle 30 Sekunden, beim Öffnen des Menüs und beim Beenden. „Neues Spiel“ im Menü
 - **Staub-Radar**: lässt den restlichen Staub kurz gelb leuchten
 - Geräusche (per Code erzeugt), fliegende Münzen, Pause-Menü mit Maus-Empfindlichkeit und Lautstärke
 
@@ -29,22 +33,25 @@ und machst sie sauber. Erst per Hand mit dem Staubwedel, später immer schneller
 | Leertaste | springen |
 | Linke Maustaste (halten) | wedeln |
 | An einer Leiter: W / S | hoch- und runterklettern (Leertaste: abspringen) |
-| U oder E | Upgrade kaufen |
+| 1 / 2 oder Mausrad | Werkzeug wechseln |
+| U oder Tab | Upgrade-Laden |
 | R | Staub-Radar |
 | Esc | Menü / Pause |
 
 ## Aufbau
 
-Die Welt wird komplett im Code erzeugt, damit man alles an einer Stelle anpassen kann.
+Das Projekt ist zweigeteilt, damit man den Kern für weitere Putzspiele wiederverwenden kann:
 
-- `scripts/main.gd` – baut den Saal, hält Münzen, Fortschritt und Upgrade. Alle Zahlen (Kosten, Radius, Boni) stehen oben als Konstanten.
-- `scripts/dust_field.gd` – der Staub als ein MultiMesh, mit Raster für schnelles Finden der Flocken
-- `scripts/player.gd` – Ego-Perspektive, Wedel, Zielring und Staubwolke
-- `scripts/hud.gd` – Anzeige und Pause-Menü (Einstellungen landen in `user://settings.cfg`)
-- `scripts/sfx.gd` – alle Geräusche, per Code erzeugt
+- `addons/clean_core/` – der wiederverwendbare Kern: Schmutz, Spielfigur, Werkzeuge, Upgrades, Münzen, Sammelobjekte, Radar, Anzeige, Upgrade-Laden, Geräusche, Speichern. Siehe [addons/clean_core/README.md](addons/clean_core/README.md).
+- `game/library/` – nur das Bibliotheks-Thema:
+  - `library_config.gd` – Texte, Werkzeuge, Upgrades und seltene Bücher als Liste. Hier dreht man an der Balance.
+  - `library_game.gd` – baut den Lesesaal, die Werkzeug-Modelle und versteckt die Bücher.
+
+Die Welt wird komplett im Code erzeugt. Spielstand: `user://bibliothek_spielstand.json`, Einstellungen: `user://settings.cfg`
+(unter Windows in `%APPDATA%\Godot\app_userdata\Bibliothek entstauben`).
 
 ## Ideen für die nächsten Schritte
 
-- Staubsauger als zweites Werkzeug, später Bücher-Roboter auf Schienen, die automatisch putzen
-- Versteckte seltene Bücher im Staub, die neue Upgrades freischalten
-- Weitere Säle, die sich nach und nach öffnen; Speichern des Spielstands; Geräusche
+- Phase 3: Bücher-Roboter auf Schienen und Saug-Drohnen, die automatisch putzen
+- Phase 4: Weitere Säle, die sich nach und nach öffnen
+- Phase 5: Musik, Lichtstrahlen, bessere Modelle, Export als .exe

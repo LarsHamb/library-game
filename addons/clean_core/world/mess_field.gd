@@ -1,16 +1,20 @@
+class_name CleanMessField
 extends MultiMeshInstance3D
-## Aller Staub der Zone als ein einziges MultiMesh.
-## So bleiben auch zehntausende Staubflocken flüssig spielbar.
-## Jede Flocke hat eine Staubmenge: Dicke Flocken brauchen mehrere Wedel-Durchgänge.
+## Aller Schmutz einer Zone als ein einziges MultiMesh (Staub, Sand, Ruß ... – nur die Farbe ändert sich).
+## So bleiben auch zehntausende Flocken flüssig spielbar.
+## Jede Flocke hat eine Schmutzmenge: Dicke Flocken brauchen mehrere Durchgänge und bringen mehr Münzen.
 
 signal flakes_removed(count: int, coins: int)
 
 const CELL_SIZE := 1.0     # Rastergröße für die schnelle Suche nach Flocken
 const FADE_TIME := 0.3     # so lange schrumpft eine Flocke, bevor sie weg ist
 const FLAKE_SIZE := 0.34   # Grundgröße einer Flocke in Metern
-const MIN_DIRT := 1.0      # dünnster Staub
-const MAX_DIRT := 3.0      # dickster Staub (in Ecken und Nischen)
-const HIGHLIGHT_COLOR := Color(1.0, 0.85, 0.2, 1.0)
+const MIN_DIRT := 1.0      # dünnste Stelle
+const MAX_DIRT := 3.0      # dickste Stelle
+
+@export var base_color := Color(0.68, 0.64, 0.57)   # Farbe des Schmutzes
+@export var thick_darken := 0.07                     # dicke Stellen werden so viel dunkler
+@export var highlight_color := Color(1.0, 0.85, 0.2, 1.0)
 
 var total := 0
 var remaining := 0
@@ -53,8 +57,8 @@ func add_area(center: Vector3, size: Vector2, spacing: float, flake_scale := 1.0
 			var dirt := lerpf(MIN_DIRT, MAX_DIRT, k)
 			var s := flake_scale * _rng.randf_range(0.75, 1.3) * (0.85 + 0.15 * dirt)
 			var basis := Basis(Vector3.UP, _rng.randf() * TAU).scaled(Vector3(s, 1.0, s))
-			var shade := _rng.randf_range(-0.05, 0.05) - 0.07 * (dirt - 1.0)
-			var color := Color(0.68 + shade, 0.64 + shade, 0.57 + shade, _rng.randf_range(0.8, 0.95))
+			var shade := _rng.randf_range(-0.05, 0.05) - thick_darken * (dirt - 1.0)
+			var color := Color(base_color.r + shade, base_color.g + shade, base_color.b + shade, _rng.randf_range(0.8, 0.95))
 			_add_flake(Transform3D(basis, p), color, dirt)
 
 
@@ -116,6 +120,7 @@ func clear_all() -> void:
 	for i in _alive.size():
 		if _alive[i] == 1:
 			_alive[i] = 0
+			_dirt[i] = 0.0
 			_fading[i] = -_rng.randf_range(0.0, 1.5)  # negativ = kleine Verzögerung
 			removed += 1
 			coins += roundi(_dirt_max[i])
@@ -130,6 +135,32 @@ func highlight(duration: float) -> void:
 	for i in _alive.size():
 		if _alive[i] == 1:
 			_apply_look(i)
+
+
+## Staubmenge jeder Flocke als Text (für den Spielstand).
+func save_state() -> String:
+	return Marshalls.raw_to_base64(_dirt.to_byte_array())
+
+
+## Stellt den Staub aus dem Spielstand wieder her. Passt die Flockenzahl nicht
+## (z.B. weil der Saal umgebaut wurde), bleibt der Staub frisch und es kommt false zurück.
+func load_state(data: String) -> bool:
+	if data.is_empty():
+		return false
+	var saved := Marshalls.base64_to_raw(data).to_float32_array()
+	if saved.size() != total:
+		return false
+	remaining = 0
+	for i in total:
+		_dirt[i] = saved[i]
+		if saved[i] <= 0.0:
+			_alive[i] = 0
+			multimesh.set_instance_transform(i, Transform3D(Basis().scaled(Vector3.ZERO), _positions[i]))
+		else:
+			_alive[i] = 1
+			remaining += 1
+			_apply_look(i)
+	return true
 
 
 func progress_percent() -> float:
@@ -168,7 +199,7 @@ func _apply_look(i: int) -> void:
 	var base := _transforms[i]
 	multimesh.set_instance_transform(i, Transform3D(base.basis.scaled(Vector3.ONE * _look_scale(i)), base.origin))
 	if _highlight_time > 0.0:
-		multimesh.set_instance_color(i, HIGHLIGHT_COLOR)
+		multimesh.set_instance_color(i, highlight_color)
 	else:
 		var c := _colors[i]
 		c.a *= 0.4 + 0.6 * clampf(_dirt[i] / _dirt_max[i], 0.0, 1.0)
