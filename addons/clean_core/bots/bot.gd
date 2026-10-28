@@ -4,6 +4,7 @@ extends Node3D
 ## Tempo und Putzkraft kommen aus den Werten "bot_speed" und "bot_power" (Upgrades).
 
 var mess: CleanMessField
+var layers: Array[CleanMessField] = []   # weitere Schichten der Zone, die Roboter putzen dürfen (z.B. Bücher)
 var speed_mult := 1.0
 var power_mult := 1.0
 var model: Node3D

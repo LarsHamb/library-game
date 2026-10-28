@@ -11,7 +11,11 @@ static func create() -> CleanGameConfig:
 	c.mess_name = "Staub"
 	c.flake_name = "Flocken"
 	c.collectible_group_name = "Seltene Bücher"
-	c.welcome_text = "Willkommen im Großen Lesesaal! Halte die linke Maustaste gedrückt, um Staub zu wedeln."
+	c.welcome_text = "Willkommen im Großen Lesesaal! Die Bücher sind völlig verstaubt.\nLinke Maustaste halten: Buchrücken sauber wedeln. Herumliegende Bücher anklicken: zurückstellen."
+	c.group_name = "Regalboden"
+	c.group_bonus = 40
+	c.pickup_name = "Verstreute Bücher"
+	c.pickup_prompt = "[Klick] Buch zurückstellen"
 	c.player_start = Vector3(0, 0.05, 12.0)
 	c.save_file = "user://bibliothek_spielstand.json"
 	c.zone_bounds = Rect2(-11.0, -14.0, 22.0, 28.0)   # Grundfläche des Lesesaals für die Karte

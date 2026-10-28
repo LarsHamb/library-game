@@ -5,6 +5,7 @@ extends MultiMeshInstance3D
 ## Jede Flocke hat eine Schmutzmenge: Dicke Flocken brauchen mehrere Durchgänge und bringen mehr Münzen.
 
 signal flakes_removed(count: int, coins: int)
+signal group_cleaned(group: int)   # alle Flocken einer Gruppe (z.B. ein Regalboden voller Bücher) sind weg
 
 const CELL_SIZE := 1.0     # Rastergröße für die schnelle Suche nach Flocken
 const FADE_TIME := 0.3     # so lange schrumpft eine Flocke, bevor sie weg ist
@@ -19,6 +20,9 @@ const MAX_DIRT := 3.0      # dickste Stelle
 @export var required_tool := ""         # leer = jedes Werkzeug; sonst nur dieses (Roboter lassen es aus)
 @export var coin_mult := 1.0            # Münzen pro Flocke = Staubmenge × coin_mult
 @export var flake_shader: Shader        # leer = weiche Staubflocke
+## Verknüpfte Flocken zeichnen sich nicht selbst, sondern schreiben ihre Staubmenge in die Instanzdaten
+## (custom_data.r = Staub 0..1, .g = Radar) dieses MultiMesh, z.B. der Bücher im Regal.
+var linked: MultiMesh
 
 var total := 0
 var remaining := 0
@@ -29,6 +33,9 @@ var _colors := PackedColorArray()
 var _alive := PackedByteArray()
 var _dirt := PackedFloat32Array()      # aktuelle Staubmenge pro Flocke
 var _dirt_max := PackedFloat32Array()  # Staubmenge zu Beginn
+var _links := PackedInt32Array()       # Index im verknüpften MultiMesh oder -1
+var _groups := PackedInt32Array()      # Gruppe der Flocke oder -1
+var _group_left := {}                  # Gruppe -> noch staubige Flocken
 var _grid := {}    # Vector3i -> Array der Flocken-Indizes
 var _fading := {}  # Index -> vergangene Zeit beim Verschwinden
 var _highlight_time := 0.0
@@ -66,6 +73,12 @@ func add_area(center: Vector3, size: Vector2, spacing: float, flake_scale := 1.0
 			_add_flake(Transform3D(basis, p), color, dirt)
 
 
+## Eine Flocke, die ein Objekt im verknüpften MultiMesh (linked) verstauben lässt, z.B. ein Buch.
+## pos = Stelle, an der man putzen muss; group fasst Flocken zusammen (Bonus, wenn alle sauber sind).
+func add_linked_flake(pos: Vector3, dirt: float, link_index: int, group := -1) -> void:
+	_add_flake(Transform3D(Basis(), pos), base_color, dirt, link_index, group)
+
+
 ## Eine einzelne Flocke an einer festen Stelle (z.B. ein Spinnennetz unter der Decke).
 func add_flake_at(pos: Vector3, flake_scale: float, dirt: float) -> void:
 	var basis := Basis(Vector3.UP, _rng.randf() * TAU).scaled(Vector3(flake_scale, 1.0, flake_scale))
@@ -81,11 +94,17 @@ func build() -> void:
 	mm.mesh = _make_flake_mesh()
 	mm.instance_count = _transforms.size()
 	for i in _transforms.size():
-		mm.set_instance_transform(i, _transforms[i])
+		if _links[i] >= 0:
+			mm.set_instance_transform(i, Transform3D(Basis().scaled(Vector3.ZERO), _positions[i]))
+		else:
+			mm.set_instance_transform(i, _transforms[i])
 		mm.set_instance_color(i, _colors[i])
 	multimesh = mm
 	total = _transforms.size()
 	remaining = total
+	for i in total:
+		if _links[i] >= 0:
+			_apply_look(i)
 
 
 ## Wedelt im Umkreis: Jede Flocke verliert Staub (in der Mitte mehr als am Rand).
@@ -113,9 +132,13 @@ func clean_at(point: Vector3, radius: float, amount: float) -> int:
 					_dirt[i] -= amount * (1.0 - 0.5 * sqrt(d2) / radius)
 					if _dirt[i] <= 0.0:
 						_alive[i] = 0
-						_fading[i] = 0.0
 						removed += 1
 						coins += roundi(_dirt_max[i] * coin_mult)
+						if _links[i] >= 0:
+							_apply_look(i)
+						else:
+							_fading[i] = 0.0
+						_count_group(i, -1, true)
 					else:
 						_apply_look(i)
 	if removed > 0:
@@ -153,6 +176,7 @@ func regrow(count: int) -> void:
 		_alive[i] = 1
 		_dirt[i] = _dirt_max[i] * _rng.randf_range(0.35, 0.6)
 		_apply_look(i)
+		_count_group(i, 1, false)
 		revived += 1
 	remaining += revived
 
@@ -165,7 +189,11 @@ func clear_all() -> void:
 		if _alive[i] == 1:
 			_alive[i] = 0
 			_dirt[i] = 0.0
-			_fading[i] = -_rng.randf_range(0.0, 1.5)  # negativ = kleine Verzögerung
+			_count_group(i, -1, false)
+			if _links[i] >= 0:
+				_apply_look(i)
+			else:
+				_fading[i] = -_rng.randf_range(0.0, 1.5)  # negativ = kleine Verzögerung
 			removed += 1
 			coins += roundi(_dirt_max[i] * coin_mult)
 	if removed > 0:
@@ -199,11 +227,18 @@ func load_state(data: String) -> bool:
 		_dirt[i] = saved[i]
 		if saved[i] <= 0.0:
 			_alive[i] = 0
-			multimesh.set_instance_transform(i, Transform3D(Basis().scaled(Vector3.ZERO), _positions[i]))
+			if _links[i] >= 0:
+				_apply_look(i)
+			else:
+				multimesh.set_instance_transform(i, Transform3D(Basis().scaled(Vector3.ZERO), _positions[i]))
 		else:
 			_alive[i] = 1
 			remaining += 1
 			_apply_look(i)
+	_group_left.clear()
+	for i in total:
+		if _groups[i] >= 0 and _alive[i] == 1:
+			_group_left[_groups[i]] = int(_group_left.get(_groups[i], 0)) + 1
 	return true
 
 
@@ -258,6 +293,11 @@ func _process(delta: float) -> void:
 
 ## Flocke schrumpft und wird blasser, je weniger Staub sie noch hat.
 func _apply_look(i: int) -> void:
+	if _links[i] >= 0:
+		var k := clampf(_dirt[i] / _dirt_max[i], 0.0, 1.0) if _alive[i] == 1 else 0.0
+		var glow := 1.0 if _highlight_time > 0.0 and _alive[i] == 1 else 0.0
+		linked.set_instance_custom_data(_links[i], Color(k, glow, 0.0, 0.0))
+		return
 	var base := _transforms[i]
 	multimesh.set_instance_transform(i, Transform3D(base.basis.scaled(Vector3.ONE * _look_scale(i)), base.origin))
 	if _highlight_time > 0.0:
@@ -272,8 +312,12 @@ func _look_scale(i: int) -> float:
 	return 0.5 + 0.5 * clampf(_dirt[i] / _dirt_max[i], 0.0, 1.0)
 
 
-func _add_flake(t: Transform3D, color: Color, dirt: float) -> void:
+func _add_flake(t: Transform3D, color: Color, dirt: float, link := -1, group := -1) -> void:
 	var index := _transforms.size()
+	_links.append(link)
+	_groups.append(group)
+	if group >= 0:
+		_group_left[group] = int(_group_left.get(group, 0)) + 1
 	_transforms.append(t)
 	_positions.append(t.origin)
 	_colors.append(color)
@@ -284,6 +328,17 @@ func _add_flake(t: Transform3D, color: Color, dirt: float) -> void:
 	if not _grid.has(key):
 		_grid[key] = []
 	_grid[key].append(index)
+
+
+## Zählt eine Gruppe hoch oder runter; meldet, wenn sie dabei sauber wird.
+func _count_group(i: int, delta: int, notify: bool) -> void:
+	var g := _groups[i]
+	if g < 0:
+		return
+	var left := int(_group_left.get(g, 0)) + delta
+	_group_left[g] = left
+	if left == 0 and notify:
+		group_cleaned.emit(g)
 
 
 func _cell(p: Vector3) -> Vector3i:

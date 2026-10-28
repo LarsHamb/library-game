@@ -9,6 +9,7 @@ var levels := {}                      # Upgrade-ID -> Stufe
 var found: Array[String] = []         # IDs gefundener Sammelobjekte
 var milestones_hit: Array[String] = []   # "zonen-id:prozent"
 var zones_done: Array[String] = []
+var returned: Array[String] = []      # IDs zurückgestellter Fundsachen (CleanPickup)
 
 
 func _init(p_config: CleanGameConfig) -> void:
@@ -114,6 +115,7 @@ func to_dict() -> Dictionary:
 		"found": found,
 		"milestones": milestones_hit,
 		"zones_done": zones_done,
+		"returned": returned,
 	}
 
 
@@ -129,5 +131,7 @@ func from_dict(data: Dictionary) -> void:
 		milestones_hit.append(str(m) if str(m).contains(":") else "main:%d" % int(m))
 	for z: Variant in data.get("zones_done", []):
 		zones_done.append(str(z))
+	for r: Variant in data.get("returned", []):
+		returned.append(str(r))
 	if bool(data.get("zone_done", false)):
 		zones_done.append("main")

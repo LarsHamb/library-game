@@ -115,7 +115,7 @@ func _draw_map() -> void:
 	for z in zones:
 		var r := _rect_of(z)
 		var rect := Rect2(xf * r.position, r.size * xf.get_scale())
-		var percent := z.mess.progress_percent()
+		var percent := z.progress_percent()
 		if z.unlocked:
 			var fill := Color(0.16, 0.11, 0.07, 0.95).lerp(Color(0.32, 0.26, 0.14, 0.95), percent / 100.0)
 			_canvas.draw_rect(rect, fill)

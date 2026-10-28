@@ -65,6 +65,7 @@ func _ready() -> void:
 	_camera.make_current()
 
 	_ray = RayCast3D.new()
+	_ray.collision_mask = 1 | 2   # Ebene 2: Dinge zum Aufheben (CleanPickup)
 	_ray.add_exception(self)
 	_camera.add_child(_ray)
 
@@ -134,6 +135,11 @@ func set_tool_scale(id: String, s: float) -> void:
 	if visual and visual.has_node("Head"):
 		var head: Node3D = visual.get_node("Head")
 		head.scale = Vector3(s, s * 1.5, s)
+
+
+## Worauf gerade gezielt wird (in Reichweite), oder null.
+func aim_target() -> Object:
+	return _ray.get_collider() if _ray.is_colliding() else null
 
 
 func is_cleaning_held() -> bool:

@@ -6,6 +6,9 @@ und machst sie sauber. Erst per Hand mit dem Staubwedel, später immer schneller
 ## Was schon geht
 
 - Drei Säle: der **Große Lesesaal**, das **Kartenarchiv** (rußiger Staub, 1,5× Münzen) und der **Kuppelsaal** (Goldstaub, 2,5× Münzen). Die Nebensäle öffnet man im Upgrade-Laden
+- **Die Bücher stehen im Mittelpunkt**: Jedes der rund 15.000 Bücher ist eingestaubt und wird beim Wedeln Stück für Stück wieder farbig. Ist ein ganzer Regalboden blitzblank, gibt es einen Bonus
+- **Verstreute Bücher** liegen auf dem Boden: anklicken, und sie fliegen zurück in ihre Lücke im Regal
+- Seltene Bücher stecken zwischen den Regalbüchern; der Boden ist nur noch Nebensache
 - Ein Werkzeug: der **Staubwedel** (linke Maustaste gedrückt halten)
 - Rund 30.000 Staubflocken auf Boden, Regalböden und Tischen. Dicker Staub braucht mehrere Durchgänge
 - **Leitern** an jedem Regal, um auch an die oberen (besonders staubigen) Böden zu kommen
