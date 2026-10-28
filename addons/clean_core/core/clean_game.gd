@@ -201,13 +201,19 @@ func _ready() -> void:
 	map.game = self
 	map.travel_requested.connect(travel_to)
 	add_child(map)
+	shop.visibility_changed.connect(func() -> void: hud.set_hud_visible(not shop.visible))
+	map.visibility_changed.connect(func() -> void: hud.set_hud_visible(not map.visible))
 	_refresh_hud()
+	# Begrüßung erst, wenn das Startmenü zu ist – vorher läge sie unter dem Menü
+	var welcome := ""
 	if loaded and _offline_coins > 0:
-		hud.toast("Willkommen zurück! Deine Roboter haben in %s\n%d %s verdient." % [_duration_text(_offline_minutes), _offline_coins, config.currency_name], 6.0)
+		welcome = "Willkommen zurück! Deine Roboter haben in %s\n%d %s verdient." % [_duration_text(_offline_minutes), _offline_coins, config.currency_name]
 	elif loaded:
-		hud.toast("Willkommen zurück!", 4.0)
-	elif config.welcome_text != "":
-		hud.toast(config.welcome_text, 5.0)
+		welcome = "Willkommen zurück!"
+	else:
+		welcome = config.welcome_text
+	if welcome != "":
+		hud.menu_closed.connect(func() -> void: hud.toast(welcome, 5.0), CONNECT_ONE_SHOT)
 	if OS.get_cmdline_user_args().has("--screenshots") or OS.get_cmdline_args().has("--screenshots"):
 		_screenshot_tour.call_deferred()
 
@@ -314,11 +320,11 @@ func _screenshot_tour() -> void:
 	var dir := ProjectSettings.globalize_path("res://screenshots")
 	DirAccess.make_dir_recursive_absolute(dir)
 	FileAccess.open(dir.path_join(".gdignore"), FileAccess.WRITE)   # Godot soll die Fotos nicht importieren
-	await _tour_wait(3.0)
+	await _tour_wait(2.0)
 	_tour_shot(dir, "00_menue")
 	hud.close_menu()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	await _tour_wait(2.0)
+	await _tour_wait(1.5)
 	_tour_shot(dir, "01_spiel")
 	shop.open()
 	await _tour_wait(0.6)
@@ -339,7 +345,7 @@ func _screenshot_tour() -> void:
 	for view in _screenshot_views():
 		cam.global_position = view["pos"]
 		cam.look_at(view["look"])
-		await _tour_wait(2.0)
+		await _tour_wait(1.2)
 		_tour_shot(dir, "%02d_%s" % [i, view["name"]])
 		i += 1
 	print("Fotos gespeichert in ", dir)

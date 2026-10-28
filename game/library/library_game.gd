@@ -240,7 +240,7 @@ func _make_vacuum() -> Node3D:
 
 
 func _title_view() -> Dictionary:
-	return {"from": Vector3(-7.0, 4.8, 13.0), "to": Vector3(7.0, 4.2, 13.0), "look": Vector3(0, 2.2, -5.0)}
+	return {"from": Vector3(-6.0, 3.2, 13.0), "to": Vector3(6.0, 2.8, 13.0), "look": Vector3(0, 2.0, -6.0)}
 
 
 ## Kamerapunkte für den Foto-Rundgang (godot --path . -- --screenshots).
@@ -615,7 +615,8 @@ func _build_room(center: Vector3, size: Vector2, height: float, side: float, flo
 	box(Vector3(0.3, height, size.y), Vector3(center.x + side * (size.x * 0.5 + 0.15), height * 0.5, center.z), wall)
 	box(Vector3(size.x, height, 0.3), Vector3(center.x, height * 0.5, center.z - size.y * 0.5 - 0.15), wall)
 	box(Vector3(size.x, height, 0.3), Vector3(center.x, height * 0.5, center.z + size.y * 0.5 + 0.15), wall)
-	box(Vector3(size.x + 0.6, 0.3, size.y + 0.6), Vector3(center.x, height + 0.15, center.z), ceiling)
+	# Die Decke ragt nur nach außen über, nicht in den Lesesaal hinein
+	box(Vector3(size.x + 0.3, 0.3, size.y + 0.6), Vector3(center.x + side * 0.15, height + 0.15, center.z), ceiling)
 
 
 func _add_lamp(pos: Vector3, color: Color, energy: float, light_range: float, shadow: bool) -> void:

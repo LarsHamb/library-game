@@ -130,7 +130,7 @@ func _draw_map() -> void:
 		var name_font := _title_font if _title_font else _body_font
 		var text_pos := rect.position + Vector2(12, 30)
 		_canvas.draw_string(name_font, text_pos, z.display_name, HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 20, 22, game.config.ui_text_color)
-		var info := "%.1f %% sauber" % percent if z.unlocked else "Gesperrt – im Upgrade-Laden öffnen"
+		var info := "%.1f %% sauber" % percent if z.unlocked else "Gesperrt\nÖffnen im Upgrade-Laden"
 		for extra in z.layers:
 			if z.unlocked and extra.remaining > 0:
 				info += "\n%s: %d übrig" % [extra.display_name, extra.remaining]
